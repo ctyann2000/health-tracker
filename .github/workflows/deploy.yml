@@ -30,7 +30,7 @@ jobs:
         run: flutter pub get
 
       - name: Build Web
-        run: flutter build web --release --base-href "/health-tracker/"
+        run: flutter build web --release --base-href "/health-tracker/" --dart-define=GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}"
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4

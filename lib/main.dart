@@ -11,8 +11,16 @@ import 'package:intl/date_symbol_data_local.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env");
-  await initializeDateFormatting('ja_JP');
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    debugPrint('Notice: .env file not found or could not be loaded: $e');
+  }
+  try {
+    await initializeDateFormatting('ja_JP');
+  } catch (e) {
+    debugPrint('Notice: Date formatting initialization: $e');
+  }
   runApp(
     MultiProvider(
       providers: [

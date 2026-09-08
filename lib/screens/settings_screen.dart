@@ -191,21 +191,40 @@ class SettingsScreen extends StatelessWidget {
                             style: TextStyle(fontSize: 12, color: Colors.black54, height: 1.4),
                           ),
                           const SizedBox(height: 14),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              onPressed: () => _showModelsDialog(context),
-                              icon: const Icon(Icons.travel_explore_outlined, size: 18),
-                              label: const Text('APIから利用可能な最新モデルを確認'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.amber.shade900,
-                                side: BorderSide(color: Colors.amber.shade700.withOpacity(0.5)),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _showApiKeyDialog(context),
+                                  icon: const Icon(Icons.key_outlined, size: 16),
+                                  label: const Text('APIキー設定'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.blueAccent,
+                                    side: BorderSide(color: Colors.blueAccent.withOpacity(0.5)),
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _showModelsDialog(context),
+                                  icon: const Icon(Icons.travel_explore_outlined, size: 16),
+                                  label: const Text('モデル一覧確認'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.amber.shade900,
+                                    side: BorderSide(color: Colors.amber.shade700.withOpacity(0.5)),
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -687,6 +706,163 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
+  // --- Gemini APIキー設定ダイアログ ---
+  void _showApiKeyDialog(BuildContext screenContext) {
+    final geminiService = GeminiService();
+    final controller = TextEditingController();
+    bool isObscured = true;
+
+    showDialog(
+      context: screenContext,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return FutureBuilder<String>(
+            future: geminiService.getApiKey(),
+            builder: (context, snapshot) {
+              final currentKey = snapshot.data ?? '';
+              final isKeyConfigured = currentKey.isNotEmpty;
+
+              return _buildGlassDialog(
+                context: dialogCtx,
+                title: const Row(
+                  children: [
+                    Icon(Icons.key, color: Colors.blueAccent),
+                    SizedBox(width: 8),
+                    Text('Gemini APIキー設定', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isKeyConfigured ? Colors.green.shade50 : Colors.amber.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isKeyConfigured ? Colors.green.shade200 : Colors.amber.shade200,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isKeyConfigured ? Icons.check_circle : Icons.warning_amber_rounded,
+                              color: isKeyConfigured ? Colors.green.shade700 : Colors.amber.shade800,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                isKeyConfigured
+                                    ? 'APIキー設定済み（端末内に安全に保存されています）'
+                                    : 'APIキー未設定です。以下に入力して保存してください。',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: isKeyConfigured ? Colors.green.shade900 : Colors.amber.shade900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Google AI Studioで取得したAPIキーを入力してください。ブラウザ・端末のローカルストレージにのみ保存され、外部サーバーには送信されません。',
+                        style: TextStyle(fontSize: 12, color: Colors.black54, height: 1.4),
+                      ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: controller,
+                        obscureText: isObscured,
+                        decoration: InputDecoration(
+                          hintText: isKeyConfigured ? '新しいAPIキーを入力して上書き' : 'AIzaSy...',
+                          labelText: 'Gemini API Key',
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          prefixIcon: const Icon(Icons.vpn_key_outlined),
+                          suffixIcon: IconButton(
+                            icon: Icon(isObscured ? Icons.visibility_off : Icons.visibility),
+                            onPressed: () {
+                              setDialogState(() {
+                                isObscured = !isObscured;
+                              });
+                            },
+                          ),
+                        ),
+                      ),
+                      if (isKeyConfigured) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          '現在のキー: ${currentKey.length > 8 ? "${currentKey.substring(0, 6)}...${currentKey.substring(currentKey.length - 4)}" : "******"}',
+                          style: const TextStyle(fontSize: 11, color: Colors.grey, fontFamily: 'monospace'),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                actions: [
+                  if (isKeyConfigured)
+                    TextButton(
+                      style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                      onPressed: () async {
+                        await geminiService.clearApiKey();
+                        if (dialogCtx.mounted) {
+                          Navigator.pop(dialogCtx);
+                        }
+                        if (screenContext.mounted) {
+                          ScaffoldMessenger.of(screenContext).showSnackBar(
+                            const SnackBar(content: Text('APIキーを削除しました')),
+                          );
+                        }
+                      },
+                      child: const Text('キー削除'),
+                    ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogCtx),
+                    child: const Text('閉じる'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () async {
+                      final input = controller.text.trim();
+                      if (input.isEmpty) {
+                        ScaffoldMessenger.of(screenContext).showSnackBar(
+                          const SnackBar(content: Text('APIキーを入力してください')),
+                        );
+                        return;
+                      }
+                      await geminiService.saveApiKey(input);
+                      if (dialogCtx.mounted) {
+                        Navigator.pop(dialogCtx);
+                      }
+                      if (screenContext.mounted) {
+                        ScaffoldMessenger.of(screenContext).showSnackBar(
+                          const SnackBar(
+                            content: Text('✅ APIキーを保存しました！AI機能をご利用いただけます。'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(screenContext).colorScheme.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('保存'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
   // --- 最新AIモデル確認ダイアログ ---
   void _showModelsDialog(BuildContext screenContext) {
     showDialog(
@@ -758,7 +934,7 @@ class SettingsScreen extends StatelessWidget {
                     child: ListView.separated(
                       shrinkWrap: true,
                       itemCount: models.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
                       itemBuilder: (context, index) {
                         final m = models[index];
                         final rawName = m['name'] as String? ?? '';

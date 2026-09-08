@@ -4,8 +4,10 @@ import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 class GeminiService {
-  late String _apiKey;
+  String? _customApiKey;
   
   final List<String> _fallbackModels = [
     'gemini-flash-lite-latest', // 常に最新Liteモデルに自動追従する公式エイリアス
@@ -19,17 +21,62 @@ class GeminiService {
   String get defaultModel => _fallbackModels.first;
   List<String> get fallbackModels => List.unmodifiable(_fallbackModels);
 
-  GeminiService() {
-    final apiKey = dotenv.env['GEMINI_API_KEY'];
-    if (apiKey == null || apiKey.isEmpty) {
-      throw Exception('No GEMINI_API_KEY found in .env');
+  GeminiService();
+
+  /// 有効なAPIキーを取得（カスタム設定 > dart-define > .env の順）
+  Future<String> getApiKey() async {
+    if (_customApiKey != null && _customApiKey!.isNotEmpty) {
+      return _customApiKey!;
     }
-    _apiKey = apiKey;
+    final prefs = await SharedPreferences.getInstance();
+    final savedKey = prefs.getString('custom_gemini_api_key');
+    if (savedKey != null && savedKey.isNotEmpty) {
+      _customApiKey = savedKey;
+      return savedKey;
+    }
+
+    const envKey = String.fromEnvironment('GEMINI_API_KEY');
+    if (envKey.isNotEmpty) {
+      return envKey;
+    }
+
+    try {
+      final dotKey = dotenv.env['GEMINI_API_KEY'];
+      if (dotKey != null && dotKey.isNotEmpty) {
+        return dotKey;
+      }
+    } catch (_) {}
+
+    return '';
+  }
+
+  /// APIキーを端末のSharedPreferencesに保存
+  Future<void> saveApiKey(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    final trimmed = key.trim();
+    if (trimmed.isEmpty) {
+      await prefs.remove('custom_gemini_api_key');
+      _customApiKey = null;
+    } else {
+      await prefs.setString('custom_gemini_api_key', trimmed);
+      _customApiKey = trimmed;
+    }
+  }
+
+  /// 保存されたAPIキーを削除
+  Future<void> clearApiKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('custom_gemini_api_key');
+    _customApiKey = null;
   }
 
   /// Google APIから現在利用可能なモデル一覧を動的取得
   Future<List<Map<String, dynamic>>> fetchAvailableModels() async {
-    final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models?key=$_apiKey');
+    final key = await getApiKey();
+    if (key.isEmpty) {
+      throw Exception('Gemini APIキーが設定されていません。設定画面からキーをご入力ください。');
+    }
+    final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models?key=$key');
     final response = await http.get(url);
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -52,10 +99,15 @@ class GeminiService {
   }
   
   Future<GenerateContentResponse> _generateWithFallback(List<Content> content) async {
+    final key = await getApiKey();
+    if (key.isEmpty) {
+      throw Exception('Gemini APIキーが未設定です。設定タブからAPIキーをご登録ください。');
+    }
+
     for (int i = 0; i < _fallbackModels.length; i++) {
       final modelName = _fallbackModels[i];
       try {
-        final model = GenerativeModel(model: modelName, apiKey: _apiKey);
+        final model = GenerativeModel(model: modelName, apiKey: key);
         return await model.generateContent(content);
       } catch (e) {
         print('Gemini API Error with $modelName: $e');
