@@ -22,23 +22,27 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Create .env
-        env:
-          API_KEY: ${{ secrets.HEALTHAPPAPI || secrets.GEMINI_API_KEY }}
+      - name: Configure API Key
         run: |
+          API_KEY="${{ secrets.HEALTHAPPAPI }}"
+          if [ -z "$API_KEY" ]; then
+            API_KEY="${{ secrets.GEMINI_API_KEY }}"
+          fi
           echo "GEMINI_API_KEY=$API_KEY" > .env
+          echo "GEMINI_API_KEY=$API_KEY" >> $GITHUB_ENV
 
       - name: Install Dependencies
         run: flutter pub get
 
       - name: Build Web
-        env:
-          API_KEY: ${{ secrets.HEALTHAPPAPI || secrets.GEMINI_API_KEY }}
-        run: flutter build web --release --base-href "/health-tracker/" --dart-define=GEMINI_API_KEY="$API_KEY"
+        run: flutter build web --release --base-href "/health-tracker/" --dart-define=GEMINI_API_KEY="$GEMINI_API_KEY"
 
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./build/web
-          force_orphan: true
+        run: |
+          cd build/web
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Deploy HealthApp: ${{ github.sha }}"
+          git push --force https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:gh-pages
