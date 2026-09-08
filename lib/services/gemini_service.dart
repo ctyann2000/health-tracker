@@ -10,12 +10,13 @@ class GeminiService {
   String? _customApiKey;
   
   final List<String> _fallbackModels = [
-    'gemini-flash-lite-latest', // 常に最新Liteモデルに自動追従する公式エイリアス
-    'gemini-3.5-flash-lite',    // 現行の最新Liteバージョン
-    'gemini-3.1-flash-lite',    // 予備
-    'gemini-2.5-flash-lite',    // 予備
-    'gemini-3.5-flash',         // 予備
-    'gemini-flash-latest',      // 予備
+    'gemini-flash-lite-latest', // 最新Liteモデル自動追従
+    'gemini-2.5-flash-lite',    // 2.5 Lite
+    'gemini-2.0-flash-lite',    // 2.0 Lite
+    'gemini-1.5-flash',         // 安定版 Flash
+    'gemini-2.0-flash',         // 2.0 Flash
+    'gemini-3.5-flash-lite',    // 3.5 Lite
+    'gemini-flash-latest',      // Flash latest
   ];
 
   String get defaultModel => _fallbackModels.first;
@@ -119,6 +120,7 @@ class GeminiService {
       throw Exception('Gemini APIキーが未設定です。設定タブからAPIキーをご登録ください。');
     }
 
+    final errors = <String>[];
     for (int i = 0; i < _fallbackModels.length; i++) {
       final modelName = _fallbackModels[i];
       try {
@@ -126,12 +128,10 @@ class GeminiService {
         return await model.generateContent(content);
       } catch (e) {
         print('Gemini API Error with $modelName: $e');
-        if (i == _fallbackModels.length - 1) {
-          rethrow;
-        }
+        errors.add('$modelName: $e');
       }
     }
-    throw Exception('All models failed');
+    throw Exception('全モデル試行失敗:\n${errors.join('\n')}');
   }
 
   Future<Map<String, dynamic>> extractHealthData(String userInput) async {

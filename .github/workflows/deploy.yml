@@ -31,8 +31,13 @@ jobs:
 
       - name: Build Web
         env:
-          RAW_KEY: ${{ secrets.HEALTHAPPAPI || secrets.GEMINI_API_KEY }}
+          KEY_PRIMARY: ${{ secrets.HEALTHAPPAPI }}
+          KEY_SECONDARY: ${{ secrets.GEMINI_API_KEY }}
         run: |
+          RAW_KEY="$KEY_PRIMARY"
+          if [ -z "$RAW_KEY" ]; then
+            RAW_KEY="$KEY_SECONDARY"
+          fi
           KEY_B64=$(echo -n "$RAW_KEY" | base64 -w 0)
           flutter build web --release --base-href "/health-tracker/" --dart-define=GEMINI_API_KEY_B64="$KEY_B64"
 

@@ -66,8 +66,9 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       if (mounted) {
         if (result.containsKey('error')) {
+          final detail = result['message'] != null ? "\n${result['message']}" : "";
           setState(() {
-            _messages.add({"text": "エラーが発生しました: ${result['error']}", "isUser": false});
+            _messages.add({"text": "エラーが発生しました: ${result['error']}$detail", "isUser": false});
           });
         } else {
           final record = HealthRecord(
