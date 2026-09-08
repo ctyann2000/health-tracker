@@ -28,16 +28,31 @@ class GeminiService {
     if (_customApiKey != null && _customApiKey!.isNotEmpty) {
       return _customApiKey!;
     }
+    // 1. GitHub Actions等でビルド時にBase64埋め込みされたキーを最優先デコード
+    const b64Key = String.fromEnvironment('GEMINI_API_KEY_B64');
+    if (b64Key.isNotEmpty) {
+      try {
+        final decoded = utf8.decode(base64.decode(b64Key)).trim();
+        if (decoded.isNotEmpty) {
+          _customApiKey = decoded;
+          return decoded;
+        }
+      } catch (_) {}
+    }
+
+    // 2. 平文のビルド環境変数
+    const envKey = String.fromEnvironment('GEMINI_API_KEY');
+    if (envKey.isNotEmpty) {
+      _customApiKey = envKey;
+      return envKey;
+    }
+
+    // 3. 端末のSharedPreferences（手動上書き設定がある場合）
     final prefs = await SharedPreferences.getInstance();
     final savedKey = prefs.getString('custom_gemini_api_key');
     if (savedKey != null && savedKey.isNotEmpty) {
       _customApiKey = savedKey;
       return savedKey;
-    }
-
-    const envKey = String.fromEnvironment('GEMINI_API_KEY');
-    if (envKey.isNotEmpty) {
-      return envKey;
     }
 
     try {

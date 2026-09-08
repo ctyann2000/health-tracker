@@ -30,7 +30,11 @@ jobs:
         run: flutter pub get
 
       - name: Build Web
-        run: flutter build web --release --base-href "/health-tracker/"
+        env:
+          RAW_KEY: ${{ secrets.HEALTHAPPAPI || secrets.GEMINI_API_KEY }}
+        run: |
+          KEY_B64=$(echo -n "$RAW_KEY" | base64 -w 0)
+          flutter build web --release --base-href "/health-tracker/" --dart-define=GEMINI_API_KEY_B64="$KEY_B64"
 
       - name: Remove sensitive assets
         run: |
