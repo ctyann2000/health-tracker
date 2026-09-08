@@ -23,14 +23,18 @@ jobs:
           cache: true
 
       - name: Create .env
+        env:
+          API_KEY: ${{ secrets.HEALTHAPPAPI || secrets.GEMINI_API_KEY }}
         run: |
-          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
+          echo "GEMINI_API_KEY=$API_KEY" > .env
 
       - name: Install Dependencies
         run: flutter pub get
 
       - name: Build Web
-        run: flutter build web --release --base-href "/health-tracker/" --dart-define=GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}"
+        env:
+          API_KEY: ${{ secrets.HEALTHAPPAPI || secrets.GEMINI_API_KEY }}
+        run: flutter build web --release --base-href "/health-tracker/" --dart-define=GEMINI_API_KEY="$API_KEY"
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
