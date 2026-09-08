@@ -22,15 +22,19 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Create .env
+      - name: Create build .env
         run: |
-          echo "GEMINI_API_KEY=${{ secrets.HEALTHAPPAPI }}" > .env
+          touch .env
 
       - name: Install Dependencies
         run: flutter pub get
 
       - name: Build Web
-        run: flutter build web --release --base-href "/health-tracker/" --dart-define=GEMINI_API_KEY="${{ secrets.HEALTHAPPAPI }}"
+        run: flutter build web --release --base-href "/health-tracker/"
+
+      - name: Remove sensitive assets
+        run: |
+          rm -f build/web/assets/.env
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
