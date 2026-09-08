@@ -1,11 +1,11 @@
 {
-    "name": "health_tracker",
-    "short_name": "health_tracker",
+    "name": "HealthApp",
+    "short_name": "HealthApp",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Personal AI Health Tracker - HealthApp",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

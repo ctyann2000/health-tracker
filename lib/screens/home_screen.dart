@@ -131,12 +131,20 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text('Health Tracker', style: TextStyle(fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.primary, letterSpacing: 1.0)),
+        title: Text(
+          'HealthApp',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Theme.of(context).colorScheme.primary,
+            letterSpacing: 1.0,
+          ),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
           IconButton(
-            icon: Icon(Icons.account_circle, color: Theme.of(context).colorScheme.primary),
+            icon: Icon(Icons.favorite_rounded, color: Colors.redAccent.shade200),
+            tooltip: 'HealthApp Personal',
             onPressed: () {},
           ),
         ],
