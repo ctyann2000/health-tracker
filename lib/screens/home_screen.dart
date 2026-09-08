@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -21,44 +22,99 @@ class _HomeScreenState extends State<HomeScreen> {
   final GeminiService _geminiService = GeminiService();
   final ImagePicker _picker = ImagePicker();
   XFile? _selectedImage;
+  Uint8List? _selectedImageBytes;
   bool _isLoading = false;
   final List<Map<String, dynamic>> _messages = [
-    {"text": "こんにちは！今日の体調や、服用したお薬、運動の記録などを教えてください。処方箋やQRコードの画像を添付することもできます。", "isUser": false}
+    {"text": "こんにちは！今日の体調や、服用したお薬、運動の記録などを教えてください。処方箋やQRコード、体重計の画面や測定アプリのスクショを添付することもできます。", "isUser": false}
   ];
 
-  Future<void> _pickImage() async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) {
-      setState(() {
-        _selectedImage = image;
-      });
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: source,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 85,
+      );
+      if (image != null) {
+        final bytes = await image.readAsBytes();
+        setState(() {
+          _selectedImage = image;
+          _selectedImageBytes = bytes;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('画像の取得に失敗しました: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
+  }
+
+  void _showImageSourceActionSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (BuildContext ctx) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_library, color: Colors.blueAccent),
+                title: const Text('写真ライブラリ・アルバムから選択'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _pickImage(ImageSource.gallery);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera_alt, color: Colors.teal),
+                title: const Text('カメラで直接撮影'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _pickImage(ImageSource.camera);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _sendMessage() async {
     final messageText = _controller.text;
+    final imageBytesToProcess = _selectedImageBytes;
     final imageToProcess = _selectedImage;
     
-    if (messageText.trim().isEmpty && imageToProcess == null) return;
+    if (messageText.trim().isEmpty && imageBytesToProcess == null) return;
     
     setState(() {
       _messages.add({
         "text": messageText.isNotEmpty ? messageText : "（画像送信）",
         "isUser": true,
-        "hasImage": imageToProcess != null
+        "hasImage": imageBytesToProcess != null,
+        "imageBytes": imageBytesToProcess,
       });
       _isLoading = true;
-      _selectedImage = null; // Clear selection after sending
+      _selectedImage = null;
+      _selectedImageBytes = null; // 送信後に選択をクリア
     });
     _controller.clear();
 
     try {
       Map<String, dynamic> result;
-      if (imageToProcess != null) {
-        final bytes = await imageToProcess.readAsBytes();
+      if (imageBytesToProcess != null) {
         result = await _geminiService.extractHealthDataFromImage(
-          bytes, 
-          imageToProcess.mimeType ?? 'image/jpeg', 
+          imageBytesToProcess, 
+          imageToProcess?.mimeType ?? 'image/jpeg', 
           extraInput: messageText
         );
       } else {
@@ -518,7 +574,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (hasImage) ...[
+                        if (msg["imageBytes"] != null) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.memory(
+                              msg["imageBytes"] as Uint8List,
+                              width: 180,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                        ] else if (hasImage) ...[
                           const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -540,6 +606,67 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
           ),
+          // 選択中の画像プレビューバー（添付時に表示）
+          if (_selectedImageBytes != null)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.95),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.4)),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 2)),
+                ],
+              ),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(
+                      _selectedImageBytes!,
+                      width: 44,
+                      height: 44,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.check_circle, size: 14, color: Colors.green.shade600),
+                            const SizedBox(width: 4),
+                            const Text(
+                              '画像添付完了（送信準備OK）',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          _selectedImage?.name ?? 'image.jpg',
+                          style: const TextStyle(fontSize: 11, color: Colors.black54),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.cancel, size: 20, color: Colors.black45),
+                    onPressed: () {
+                      setState(() {
+                        _selectedImage = null;
+                        _selectedImageBytes = null;
+                      });
+                    },
+                    tooltip: '添付をキャンセル',
+                  ),
+                ],
+              ),
+            ).animate().fade(duration: 200.ms).slideY(begin: 0.1),
           // Input field
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
@@ -551,10 +678,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 IconButton(
                   icon: Icon(
                     Icons.camera_alt, 
-                    color: _selectedImage != null ? Theme.of(context).colorScheme.primary : Colors.black45
+                    color: _selectedImageBytes != null ? Theme.of(context).colorScheme.primary : Colors.black45
                   ),
-                  onPressed: _pickImage,
-                  tooltip: "画像・QRコードを添付",
+                  onPressed: _showImageSourceActionSheet,
+                  tooltip: "画像・写真・QRコードを添付",
                 ),
                 Expanded(
                   child: TextField(

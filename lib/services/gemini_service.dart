@@ -187,27 +187,52 @@ class GeminiService {
     }
   }
 
+  static String resolveMimeType(List<int> bytes, String? fallback) {
+    if (bytes.length >= 4) {
+      if (bytes[0] == 0xFF && bytes[1] == 0xD8) return 'image/jpeg';
+      if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return 'image/png';
+      if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46) return 'image/gif';
+      if (bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46) return 'image/webp';
+    }
+    if (fallback != null && fallback.isNotEmpty && fallback.contains('/')) {
+      return fallback;
+    }
+    return 'image/jpeg';
+  }
+
   Future<Map<String, dynamic>> extractHealthDataFromImage(List<int> imageBytes, String mimeType, {String? extraInput}) async {
+    final effectiveMimeType = resolveMimeType(imageBytes, mimeType);
     final prompt = '''
-あなたはプロの医療・健康アシスタントであり、処方箋や薬袋、お薬手帳のQRコードなどの読み取りのプロです。
-添付された画像から「薬の名前」や「健康に関する情報」を抽出し、以下のJSONフォーマットで返してください。
-もしJAHIS標準のQRコード画像であれば、そこから薬の情報を抽出してください。
-ユーザーからの追加コメント: "${extraInput ?? '特になし'}"
+あなたはプロの医療・健康管理AIアシスタントです。
+画像から「処方箋・薬袋・お薬手帳のQRコード」および「体重計・体組成計の液晶画面・ヘルスケア測定アプリのスクリーンショット（体重、体脂肪率、BMI、骨量、筋肉量、基礎代謝、歩数等）」の情報を高精度に抽出し、以下のJSONフォーマットのみで返してください。
+
+【読み取り指示】
+1. 体重計・体組成計の画面や測定アプリのスクショの場合:
+   - 体重(kg)の数値を weight に格納 (例: 68.4)
+   - 体脂肪率(%)の数値を bodyFat に格納 (例: 19.8)
+   - BMIの数値を bmi に格納 (例: 22.5)
+   - 基礎代謝(kcal)の数値を bmr に格納 (例: 1520)
+   - 歩数があれば steps に格納
+   - 消費カロリーがあれば calories に格納
+2. 処方箋や薬袋・お薬手帳の場合:
+   - 薬品名とおおよその服用時間を medications に格納
+   - 症状があれば symptoms に格納
+3. ユーザーからの追加コメント: "${extraInput ?? '特になし'}"
 
 出力フォーマット（JSON）:
 {
-  "condition_score": 1〜10の整数 (指定がなければnull),
-  "symptoms": ["症状1"],
+  "condition_score": 1〜10の整数 (指定または体調が推測できれば設定、不明ならnull),
+  "symptoms": ["症状名"],
   "medications": [
-    { "name": "薬の名前1", "time": "08:30" }
+    { "name": "薬の名前", "time": "08:30" }
   ],
-  "weight": 小数（指定がなければnull）,
-  "steps": 整数（指定がなければnull）,
-  "bodyFat": 小数（指定がなければnull）,
-  "bmi": 小数（指定がなければnull）,
-  "bmr": 整数（指定がなければnull）,
-  "calories": 整数（指定がなければnull）,
-  "sleepHours": 小数（指定がなければnull）,
+  "weight": 小数 (kg、不明ならnull),
+  "steps": 整数 (不明ならnull),
+  "bodyFat": 小数 (%%、不明ならnull),
+  "bmi": 小数 (不明ならnull),
+  "bmr": 整数 (kcal、不明ならnull),
+  "calories": 整数 (kcal、不明ならnull),
+  "sleepHours": 小数 (時間、不明ならnull),
   "workouts": []
 }
 Markdownのコードブロック(```json)は含めず、純粋なJSON文字列のみを出力してください。
@@ -217,7 +242,7 @@ Markdownのコードブロック(```json)は含めず、純粋なJSON文字列�
       final content = [
         Content.multi([
           TextPart(prompt),
-          DataPart(mimeType, Uint8List.fromList(imageBytes)),
+          DataPart(effectiveMimeType, Uint8List.fromList(imageBytes)),
         ])
       ];
       final response = await _generateWithFallback(content);
