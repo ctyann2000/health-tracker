@@ -60,6 +60,33 @@ class HealthProvider with ChangeNotifier {
     saveRecords();
   }
 
+  /// 特定の日付の記録を完全に上書き・更新（編集内容で置換）
+  void updateRecord(HealthRecord record) {
+    final index = _records.indexWhere((r) =>
+        r.date.year == record.date.year &&
+        r.date.month == record.date.month &&
+        r.date.day == record.date.day);
+
+    if (index >= 0) {
+      _records[index] = record;
+    } else {
+      _records.add(record);
+    }
+    _records.sort((a, b) => a.date.compareTo(b.date));
+    notifyListeners();
+    saveRecords();
+  }
+
+  /// 特定の日付の記録を削除
+  void deleteRecord(DateTime date) {
+    _records.removeWhere((r) =>
+        r.date.year == date.year &&
+        r.date.month == date.month &&
+        r.date.day == date.day);
+    notifyListeners();
+    saveRecords();
+  }
+
   void _mergeRecordInternal(HealthRecord record) {
     // 同じ日付の記録があれば上書きするか、単純に追加するか。
     final index = _records.indexWhere((r) => 

@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../providers/health_provider.dart';
 import '../models/health_record.dart';
 import '../utils/workout_analyzer.dart';
+import '../widgets/edit_health_record_dialog.dart';
 
 class AnalyticsScreen extends StatelessWidget {
   const AnalyticsScreen({super.key});
@@ -134,7 +135,14 @@ class AnalyticsScreen extends StatelessWidget {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('${DateTime.now().year}年 ${DateTime.now().month}月', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('${DateTime.now().year}年 ${DateTime.now().month}月', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 2),
+                                  const Text('日付をタップして記録の確認・修正・削除', style: TextStyle(fontSize: 11, color: Colors.black45)),
+                                ],
+                              ),
                               const Icon(Icons.calendar_month, color: Colors.black54),
                             ],
                           ),
@@ -697,30 +705,48 @@ class AnalyticsScreen extends StatelessWidget {
             bool hasWorkout = record != null && record.workouts.isNotEmpty;
             bool isToday = day == now.day && now.month == date.month && now.year == date.year;
 
-            return Container(
-              decoration: BoxDecoration(
-                color: isToday ? Theme.of(context).colorScheme.primary : Colors.white.withOpacity(0.5),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: (hasBadHealth || hasWorkout) ? Theme.of(context).colorScheme.secondary : Colors.transparent,
-                  width: 1.5,
+            return InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () {
+                EditHealthRecordDialog.show(context, date, existingRecord: record);
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  color: isToday
+                      ? Theme.of(context).colorScheme.primary
+                      : (record != null
+                          ? Colors.white.withOpacity(0.85)
+                          : Colors.white.withOpacity(0.4)),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: (hasBadHealth || hasWorkout)
+                        ? Theme.of(context).colorScheme.secondary
+                        : (record != null ? Colors.grey.withOpacity(0.3) : Colors.transparent),
+                    width: 1.5,
+                  ),
+                  boxShadow: isToday
+                      ? [BoxShadow(color: Theme.of(context).colorScheme.primary.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))]
+                      : (record != null
+                          ? [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 2))]
+                          : []),
                 ),
-                boxShadow: isToday ? [BoxShadow(color: Theme.of(context).colorScheme.primary.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))] : [],
-              ),
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text('$day', style: TextStyle(fontSize: 14, fontWeight: isToday ? FontWeight.bold : FontWeight.normal, color: isToday ? Colors.white : Colors.black87)),
-                    const SizedBox(height: 2),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (hasBadHealth) Icon(Icons.sick, size: 10, color: isToday ? Colors.white : Colors.redAccent),
-                        if (hasWorkout) Icon(Icons.fitness_center, size: 10, color: isToday ? Colors.white : Colors.cyan),
-                      ],
-                    ),
-                  ],
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('$day', style: TextStyle(fontSize: 14, fontWeight: isToday || record != null ? FontWeight.bold : FontWeight.normal, color: isToday ? Colors.white : Colors.black87)),
+                      const SizedBox(height: 2),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (hasBadHealth) Icon(Icons.sick, size: 10, color: isToday ? Colors.white : Colors.redAccent),
+                          if (hasWorkout) Icon(Icons.fitness_center, size: 10, color: isToday ? Colors.white : Colors.cyan),
+                          if (record != null && !hasBadHealth && !hasWorkout)
+                            Icon(Icons.check_circle, size: 9, color: isToday ? Colors.white70 : Colors.teal),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );

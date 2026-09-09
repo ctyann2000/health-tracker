@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/health_provider.dart';
 import '../models/health_record.dart';
+import '../widgets/edit_health_record_dialog.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -144,61 +145,128 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 )
               ],
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 日付と体調スコア
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(24),
+              onTap: () {
+                EditHealthRecordDialog.show(context, record.date, existingRecord: record);
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      dateFormat.format(record.date),
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
+                    // 日付と体調スコア・アクションボタン
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          dateFormat.format(record.date),
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (record.conditionScore != null) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: _getScoreColor(record.conditionScore!).withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: _getScoreColor(record.conditionScore!).withOpacity(0.3)),
+                                ),
+                                child: Text(
+                                  'スコア: ${record.conditionScore}',
+                                  style: TextStyle(
+                                    color: _getScoreColor(record.conditionScore!),
+                                    fontWeight: FontWeight.bold, 
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                            ],
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, size: 18, color: Color(0xFF0072FF)),
+                              tooltip: 'この記録を修正',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                              onPressed: () {
+                                EditHealthRecordDialog.show(context, record.date, existingRecord: record);
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                              tooltip: 'この記録を削除',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                              onPressed: () {
+                                _confirmDeleteRecord(context, record);
+                              },
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                    if (record.conditionScore != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: _getScoreColor(record.conditionScore!).withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: _getScoreColor(record.conditionScore!).withOpacity(0.3)),
-                        ),
-                        child: Text(
-                          'スコア: ${record.conditionScore}',
-                          style: TextStyle(
-                            color: _getScoreColor(record.conditionScore!),
-                            fontWeight: FontWeight.bold, 
-                            fontSize: 12
-                          ),
-                        ),
-                      ),
+                    const SizedBox(height: 12),
+                    
+                    // サマリー情報
+                    if (record.symptoms.isNotEmpty)
+                      _buildDetailRow(Icons.sick_outlined, '症状: ${record.symptoms.join(", ")}'),
+                    if (record.medications.isNotEmpty)
+                      _buildDetailRow(Icons.medication_outlined, '薬: ${record.medications.map((m) => m.name).join(", ")}'),
+                    if (record.workouts.isNotEmpty)
+                      _buildDetailRow(Icons.fitness_center, '運動: ${record.workouts.map((w) => w.name).join(", ")}'),
+                    if (record.steps != null && record.steps! > 0)
+                      _buildDetailRow(Icons.directions_walk, '歩数: ${record.steps}歩'),
+                    if (record.sleepHours != null)
+                      _buildDetailRow(Icons.bedtime_outlined, '睡眠: ${record.sleepHours}時間'),
+                    if (record.weight != null)
+                      _buildDetailRow(Icons.monitor_weight_outlined, '体重: ${record.weight}kg${record.bodyFat != null ? " (体脂肪: ${record.bodyFat}%)" : ""}'),
+                    
+                    // なにもない場合
+                    if (record.symptoms.isEmpty && 
+                        record.medications.isEmpty && 
+                        record.workouts.isEmpty && 
+                        (record.steps == null || record.steps == 0) &&
+                        record.sleepHours == null &&
+                        record.weight == null)
+                      const Text('詳細記録なし', style: TextStyle(color: Colors.black54)),
                   ],
                 ),
-                const SizedBox(height: 12),
-                
-                // サマリー情報
-                if (record.symptoms.isNotEmpty)
-                  _buildDetailRow(Icons.sick_outlined, '症状: ${record.symptoms.join(", ")}'),
-                if (record.medications.isNotEmpty)
-                  _buildDetailRow(Icons.medication_outlined, '薬: ${record.medications.map((m) => m.name).join(", ")}'),
-                if (record.workouts.isNotEmpty)
-                  _buildDetailRow(Icons.fitness_center, '運動: ${record.workouts.map((w) => w.name).join(", ")}'),
-                if (record.steps != null && record.steps! > 0)
-                  _buildDetailRow(Icons.directions_walk, '歩数: ${record.steps}歩'),
-                if (record.sleepHours != null)
-                  _buildDetailRow(Icons.bedtime_outlined, '睡眠: ${record.sleepHours}時間'),
-                
-                // なにもない場合
-                if (record.symptoms.isEmpty && 
-                    record.medications.isEmpty && 
-                    record.workouts.isEmpty && 
-                    (record.steps == null || record.steps == 0) &&
-                    record.sleepHours == null)
-                  const Text('詳細記録なし', style: TextStyle(color: Colors.black54)),
-              ],
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  void _confirmDeleteRecord(BuildContext context, HealthRecord record) {
+    final dateFormat = DateFormat('yyyy年M月d日 (E)', 'ja_JP');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('記録の削除', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+        content: Text(
+          '${dateFormat.format(record.date)} の記録を本当に削除しますか？\nこの操作は取り消せません。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('キャンセル'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () {
+              Provider.of<HealthProvider>(context, listen: false).deleteRecord(record.date);
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${dateFormat.format(record.date)} の記録を削除しました')),
+              );
+            },
+            child: const Text('削除する', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
     );
   }
