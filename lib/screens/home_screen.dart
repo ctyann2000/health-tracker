@@ -6,6 +6,7 @@ import 'dart:ui';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:intl/intl.dart';
 import '../services/gemini_service.dart';
 import '../providers/health_provider.dart';
 import '../models/health_record.dart';
@@ -128,8 +129,19 @@ class _HomeScreenState extends State<HomeScreen> {
             _messages.add({"text": "エラーが発生しました: ${result['error']}$detail", "isUser": false});
           });
         } else {
+          // AIが抽出した日付（YYYY-MM-DD）があれば採用、なければ現在日時
+          DateTime targetDate = DateTime.now();
+          if (result['date'] != null && (result['date'] as String).trim().isNotEmpty) {
+            try {
+              final parsed = DateTime.parse((result['date'] as String).trim());
+              targetDate = DateTime(parsed.year, parsed.month, parsed.day, targetDate.hour, targetDate.minute);
+            } catch (e) {
+              debugPrint('Failed to parse date from AI: ${result['date']}');
+            }
+          }
+
           final record = HealthRecord(
-            date: DateTime.now(),
+            date: targetDate,
             conditionScore: result['condition_score'],
             symptoms: List<String>.from(result['symptoms'] ?? []),
             medications: (result['medications'] as List?)
@@ -160,6 +172,7 @@ class _HomeScreenState extends State<HomeScreen> {
             if (result['prescription'] != null && result['prescription'] is Map) {
               try {
                 final presMap = Map<String, dynamic>.from(result['prescription']);
+                presMap['date'] = targetDate.toIso8601String();
                 final presRecord = PrescriptionRecord.fromJson(presMap);
                 if (presRecord.medications.isNotEmpty) {
                   Provider.of<HealthProvider>(context, listen: false).addPrescription(presRecord);
@@ -172,6 +185,13 @@ class _HomeScreenState extends State<HomeScreen> {
             final coachReply = (result['reply'] as String?)?.trim() ?? "";
             
             final List<String> summaryLines = [];
+            final now = DateTime.now();
+            final isToday = targetDate.year == now.year && targetDate.month == now.month && targetDate.day == now.day;
+            if (!isToday) {
+              final dateStr = DateFormat('yyyy年M月d日(E)', 'ja_JP').format(targetDate);
+              summaryLines.add("対象日: $dateStr");
+            }
+
             if (record.conditionScore != null) {
               summaryLines.add("体調スコア: ${record.conditionScore}/10");
             } else {

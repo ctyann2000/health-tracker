@@ -63,4 +63,43 @@ void main() {
     expect(fullMessage, contains('症状: 頭痛'));
     expect(fullMessage, contains('お薬: ロキソプロフェン'));
   });
+
+  test('Gemini response extracts custom date (yesterday/specific date) for workout correctly', () {
+    final geminiResult = {
+      'date': '2026-09-08',
+      'reply': '9月8日のトレーニング記録ですね！ベンチプレスしっかりこなされて素晴らしいです。',
+      'condition_score': 8,
+      'symptoms': [],
+      'medications': [],
+      'weight': null,
+      'steps': null,
+      'bodyFat': null,
+      'bmi': null,
+      'bmr': null,
+      'calories': null,
+      'sleepHours': null,
+      'workouts': [
+        {'name': 'ベンチプレス', 'weight': 60, 'reps': 10, 'sets': 3}
+      ]
+    };
+
+    DateTime targetDate = DateTime.now();
+    if (geminiResult['date'] != null && (geminiResult['date'] as String).isNotEmpty) {
+      targetDate = DateTime.parse(geminiResult['date'] as String);
+    }
+
+    final record = HealthRecord(
+      date: targetDate,
+      conditionScore: geminiResult['condition_score'] as int?,
+      workouts: (geminiResult['workouts'] as List)
+          .map((e) => Workout.fromJson(e))
+          .toList(),
+    );
+
+    expect(record.date.year, 2026);
+    expect(record.date.month, 9);
+    expect(record.date.day, 8);
+    expect(record.workouts.first.name, 'ベンチプレス');
+    expect(record.workouts.first.weight, 60.0);
+  });
 }

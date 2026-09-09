@@ -135,23 +135,28 @@ class GeminiService {
   }
 
   Future<Map<String, dynamic>> extractHealthData(String userInput) async {
+    final now = DateTime.now();
+    final todayStr = "${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+
     final prompt = """
+現在の日付（基準日）: $todayStr
 ユーザーの入力テキストから健康情報を抽出し、AI Health Coachとしての寄り添いメッセージと共に指定されたJSONフォーマットのみを出力してください。マークダウンブロック（```json）は含めないでください。
 
 【抽出および応答指示】
-1. reply: ユーザーの症状、体調、お薬の服用に対して、AIヘルスコーチとして寄り添う温かい共感やアドバイス、休息や水分補給を促すメッセージ（2〜3文程度、自然で親切な日本語）。例: 「頭痛、お辛いですね。ロキソプロフェンを服用された記録をつけておきました。無理をなさらず、水分をしっかり摂って少し横になって休んでくださいね。」
-2. condition_score: 体調スコア (1-10の整数。ユーザーが数値を指定している場合はその値。指定がない場合でも、頭痛や腹痛、発熱などの体調不良・症状があれば辛さに応じて3〜4などのスコアを推定。症状がなく元気・好調なら7〜8等を推定。全く手掛かりがなければnull)
-3. symptoms: 症状のリスト (文字列の配列、なければ空配列。例: ["頭痛"])
-4. medications: 服用した薬のリスト。各薬は {"name": "薬の名前", "time": "HH:MM"} の形式（時間は24時間表記）。時間が不明な場合は "time": null。なければ空配列。
-5. weight: 体重（数値、kg、不明ならnull）
-6. steps: 歩数（整数、不明ならnull）
-7. bodyFat: 体脂肪率（数値、%、不明ならnull）
-8. bmi: BMI（数値、不明なら計算するかnull）
-9. bmr: 基礎代謝（整数、kcal、不明ならnull）
-10. calories: 消費カロリー（整数、kcal、アクティブと安静時の合計など、不明ならnull）
-11. sleepHours: 睡眠時間（数値、時間、例: 7.5、不明ならnull）
-12. workouts: 筋トレなどの運動リスト。各運動は {"name": "種目名", "weight": 重さ(kg, 数値), "reps": 回数(整数), "sets": セット数(整数)}。不明な数値項目は0。なければ空配列。
-13. prescription: 処方箋・医療機関での処方情報がある場合のみ以下のオブジェクト（なければnull）。
+1. date: 記録対象の日付（"YYYY-MM-DD"形式の文字列）。入力テキスト中に「昨日」「一昨日」「9月8日」「2026/09/08」「3日前」などの日付表現がある場合は、基準日（$todayStr）から正確に計算してその日付を設定してください。日付の指定が全くない場合は null。
+2. reply: ユーザーの症状、体調、運動・トレーニング、お薬の服用に対して、AIヘルスコーチとして寄り添う温かい共感やアドバイス、励ましのメッセージ（2〜3文程度、自然で親切な日本語）。例: 「昨日のトレーニング記録ですね！ベンチプレス50kgを3セットしっかりこなされて素晴らしいです。筋肉の回復のためにしっかりタンパク質と休息をとってくださいね。」
+3. condition_score: 体調スコア (1-10の整数。ユーザーが数値を指定している場合はその値。指定がない場合でも、頭痛や腹痛、発熱などの体調不良・症状があれば辛さに応じて3〜4などのスコアを推定。症状がなく元気・好調なら7〜8等を推定。全く手掛かりがなければnull)
+4. symptoms: 症状のリスト (文字列の配列、なければ空配列。例: ["頭痛"])
+5. medications: 服用した薬のリスト。各薬は {"name": "薬の名前", "time": "HH:MM"} の形式（時間は24時間表記）。時間が不明な場合は "time": null。なければ空配列。
+6. weight: 体重（数値、kg、不明ならnull）
+7. steps: 歩数（整数、不明ならnull）
+8. bodyFat: 体脂肪率（数値、%、不明ならnull）
+9. bmi: BMI（数値、不明なら計算するかnull）
+10. bmr: 基礎代謝（整数、kcal、不明ならnull）
+11. calories: 消費カロリー（整数、kcal、アクティブと安静時の合計など、不明ならnull）
+12. sleepHours: 睡眠時間（数値、時間、例: 7.5、不明ならnull）
+13. workouts: 筋トレなどの運動リスト。各運動は {"name": "種目名", "weight": 重さ(kg, 数値), "reps": 回数(整数), "sets": セット数(整数)}。不明な数値項目は0。なければ空配列。
+14. prescription: 処方箋・医療機関での処方情報がある場合のみ以下のオブジェクト（なければnull）。
     - hospital_name: 病院・クリニック名（例: 栗田皮フ科、不明ならnull）
     - department: 診療科（例: 皮膚科、不明ならnull）
     - doctor_name: 医師名（不明ならnull）
@@ -164,10 +169,11 @@ class GeminiService {
 
 フォーマット:
 {
-  "reply": "頭痛、お辛いですね。お薬を服用された記録を保存しました。無理をせず安静にしてくださいね。",
-  "condition_score": 4,
-  "symptoms": ["頭痛"],
-  "medications": [{"name": "ロキソニン", "time": "08:00"}],
+  "date": "2026-09-08",
+  "reply": "トレーニング記録を保存しました！しっかり負荷をかけられていて素晴らしいです。",
+  "condition_score": 7,
+  "symptoms": [],
+  "medications": [],
   "weight": 65.2,
   "steps": 5000,
   "bodyFat": 20.5,
@@ -214,13 +220,18 @@ class GeminiService {
 
   Future<Map<String, dynamic>> extractHealthDataFromImage(List<int> imageBytes, String mimeType, {String? extraInput}) async {
     final effectiveMimeType = resolveMimeType(imageBytes, mimeType);
+    final now = DateTime.now();
+    final todayStr = "${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+
     final prompt = '''
 あなたはプロの医療・健康管理AIアシスタントです。
+現在の日付（基準日）: $todayStr
 画像から「処方箋・薬袋・お薬手帳のQRコード」および「体重計・体組成計の液晶画面・ヘルスケア測定アプリのスクリーンショット（体重、体脂肪率、BMI、骨量、筋肉量、基礎代謝、歩数等）」の情報を高精度に抽出し、以下のJSONフォーマットのみで返してください。
 
 【読み取り指示】
-1. reply: ユーザーの症状、体調、画像の内容（処方箋や測定値）に対して、AIヘルスコーチとして寄り添う温かい共感やアドバイス、アドバイスメッセージ（2〜3文程度、自然で親切な日本語）。
-2. condition_score: 1〜10の整数 (指定または症状・体調が推測できれば設定、明らかな体調不良時は3〜4等、好調なら7〜8等、不明ならnull)
+1. date: 記録対象の日付（"YYYY-MM-DD"形式）。画像内の測定日時・調剤日・処方日、またはユーザー追加コメントに日付の指定（昨日、9月8日等）があればその日付を設定、なければ null。
+2. reply: ユーザーの症状、体調、画像の内容（処方箋や測定値）に対して、AIヘルスコーチとして寄り添う温かい共感やアドバイス、アドバイスメッセージ（2〜3文程度、自然で親切な日本語）。
+3. condition_score: 1〜10の整数 (指定または症状・体調が推測できれば設定、明らかな体調不良時は3〜4等、好調なら7〜8等、不明ならnull)
 3. 体重計・体組成計の画面や測定アプリのスクショの場合:
    - 体重(kg)の数値を weight に格納 (例: 68.4)
    - 体脂肪率(%)の数値を bodyFat に格納 (例: 19.8)
