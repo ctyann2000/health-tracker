@@ -155,15 +155,42 @@ class _HomeScreenState extends State<HomeScreen> {
           } else {
             Provider.of<HealthProvider>(context, listen: false).addRecord(record);
             
-            final medsText = record.medications.map((m) => m.time != null ? "${m.time} ${m.name}" : m.name).join(', ');
-            final weightText = record.weight != null ? "\n体重: ${record.weight}kg" : "";
-            final bodyFatText = record.bodyFat != null ? "\n体脂肪率: ${record.bodyFat}%" : "";
-            final sleepText = record.sleepHours != null ? "\n睡眠: ${record.sleepHours}h" : "";
-            final calText = record.calories != null ? "\n消費カロリー: ${record.calories}kcal" : "";
-            final stepsText = record.steps != null ? "\n歩数: ${record.steps}歩" : "";
+            final coachReply = (result['reply'] as String?)?.trim() ?? "";
+            
+            final List<String> summaryLines = [];
+            if (record.conditionScore != null) {
+              summaryLines.add("体調スコア: ${record.conditionScore}/10");
+            } else {
+              summaryLines.add("体調スコア: -");
+            }
+            if (record.symptoms.isNotEmpty) {
+              summaryLines.add("症状: ${record.symptoms.join(', ')}");
+            }
+            if (record.medications.isNotEmpty) {
+              final meds = record.medications.map((m) => m.time != null ? "${m.time} ${m.name}" : m.name).join(', ');
+              summaryLines.add("お薬: $meds");
+            }
+            if (record.workouts.isNotEmpty) {
+              final wText = record.workouts.map((w) {
+                if (w.weight > 0 && w.reps > 0 && w.sets > 0) return "${w.name} (${w.weight}kg ${w.reps}回×${w.sets}set)";
+                if (w.reps > 0 && w.sets > 0) return "${w.name} (${w.reps}回×${w.sets}set)";
+                return w.name;
+              }).join(', ');
+              summaryLines.add("運動: $wText");
+            }
+            if (record.weight != null) summaryLines.add("体重: ${record.weight}kg");
+            if (record.bodyFat != null) summaryLines.add("体脂肪率: ${record.bodyFat}%");
+            if (record.sleepHours != null) summaryLines.add("睡眠: ${record.sleepHours}時間");
+            if (record.steps != null && record.steps! > 0) summaryLines.add("歩数: ${record.steps}歩");
+            if (record.calories != null) summaryLines.add("消費カロリー: ${record.calories}kcal");
+
+            final summaryBlock = summaryLines.join('\n');
+            final fullMessage = coachReply.isNotEmpty
+                ? "$coachReply\n\n【記録内容】\n$summaryBlock"
+                : "記録を保存しました！\n$summaryBlock";
 
             setState(() {
-              _messages.add({"text": "記録を保存しました！\n体調スコア: ${record.conditionScore ?? '-'}\nお薬: ${medsText.isEmpty ? '-' : medsText}$weightText$bodyFatText$sleepText$calText$stepsText", "isUser": false});
+              _messages.add({"text": fullMessage, "isUser": false});
             });
           }
         }
