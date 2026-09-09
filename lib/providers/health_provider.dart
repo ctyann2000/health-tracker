@@ -162,6 +162,14 @@ class HealthProvider with ChangeNotifier {
     }).toList();
   }
 
+  /// 指定した年月（Year, Month）の記録を日付昇順（古い順）で取得するヘルパー
+  List<HealthRecord> getRecordsForMonth(DateTime month) {
+    final filtered = _records.where((r) =>
+        r.date.year == month.year && r.date.month == month.month).toList();
+    filtered.sort((a, b) => a.date.compareTo(b.date));
+    return filtered;
+  }
+
   // --- ローカルバックアップ用ヘルパー ---
 
   /// 全データを整形済みJSON文字列としてエクスポート

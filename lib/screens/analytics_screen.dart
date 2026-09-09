@@ -9,8 +9,55 @@ import '../models/health_record.dart';
 import '../utils/workout_analyzer.dart';
 import '../widgets/edit_health_record_dialog.dart';
 
-class AnalyticsScreen extends StatelessWidget {
+class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
+
+  @override
+  State<AnalyticsScreen> createState() => _AnalyticsScreenState();
+}
+
+class _AnalyticsScreenState extends State<AnalyticsScreen> {
+  late DateTime _selectedMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _selectedMonth = DateTime(now.year, now.month, 1);
+  }
+
+  void _prevMonth() {
+    setState(() {
+      _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month - 1, 1);
+    });
+  }
+
+  void _nextMonth() {
+    setState(() {
+      _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 1);
+    });
+  }
+
+  void _goToCurrentMonth() {
+    setState(() {
+      final now = DateTime.now();
+      _selectedMonth = DateTime(now.year, now.month, 1);
+    });
+  }
+
+  double _calculateBottomInterval(int count) {
+    if (count <= 7) return 1.0;
+    if (count <= 14) return 2.0;
+    if (count <= 21) return 3.0;
+    return (count / 6).ceilToDouble();
+  }
+
+  double _calculateBarWidth(int count) {
+    if (count <= 7) return 16.0;
+    if (count <= 12) return 12.0;
+    if (count <= 20) return 8.0;
+    return 5.5;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,13 +84,11 @@ class AnalyticsScreen extends StatelessWidget {
             builder: (context, provider, child) {
               if (provider.isLoading) return const Center(child: CircularProgressIndicator());
               
-              // 直近7日間のデータを取得し、古い順（グラフの左から右）にソート
-              final recentRecords = List<HealthRecord>.from(provider.getRecentRecords(7))
-                ..sort((a, b) => a.date.compareTo(b.date));
-
-              if (recentRecords.isEmpty) {
-                return const Center(child: Text('直近のデータがありません', style: TextStyle(color: Colors.black54)));
-              }
+              // 選択された月の全データを取得（古い順・日付昇順）
+              final monthRecords = provider.getRecordsForMonth(_selectedMonth);
+              final now = DateTime.now();
+              final isCurrentMonth = _selectedMonth.year == now.year && _selectedMonth.month == now.month;
+              final daysInMonth = DateUtils.getDaysInMonth(_selectedMonth.year, _selectedMonth.month);
 
               return SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
@@ -57,72 +102,107 @@ class AnalyticsScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 8),
-                    const Text('直近7日間のトレンド', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87)).animate().fade().slideY(begin: 0.1),
+
+                    // --- 月選択ヘッダーバー ---
+                    _buildMonthSelectorHeader(context, isCurrentMonth).animate().fade().slideY(begin: -0.05),
                     const SizedBox(height: 16),
-                    
-                    // --- 睡眠グラフ ---
-                    if (recentRecords.any((r) => r.sleepHours != null)) ...[
-                      _buildChartCard(
-                        context: context,
-                        title: '睡眠時間',
-                        icon: Icons.bedtime,
-                        color: const Color(0xFF7986CB),
-                        child: _buildSleepChart(recentRecords),
-                      ).animate().fade(delay: 100.ms).slideY(begin: 0.05),
-                      const SizedBox(height: 16),
-                    ],
 
-                    // --- トレーニング推移 ---
-                    if (recentRecords.any((r) => r.workouts.isNotEmpty)) ...[
-                      _buildChartCard(
-                        context: context,
-                        title: '総負荷量 (ボリューム)',
-                        icon: Icons.fitness_center,
-                        color: Colors.amber.shade700,
-                        child: _buildVolumeChart(recentRecords),
-                      ).animate().fade(delay: 150.ms).slideY(begin: 0.05),
-                      const SizedBox(height: 16),
-                      _buildChartCard(
-                        context: context,
-                        title: '鍛えた部位バランス',
-                        icon: Icons.accessibility_new,
-                        color: Colors.deepOrange,
-                        child: _buildMuscleRadarChart(recentRecords),
-                      ).animate().fade(delay: 175.ms).slideY(begin: 0.05),
-                      const SizedBox(height: 16),
-                    ],
+                    // --- 月間サマリー統計カード ---
+                    _buildMonthSummaryCards(context, monthRecords, daysInMonth).animate().fade(delay: 50.ms).slideY(begin: 0.05),
+                    const SizedBox(height: 20),
 
-                    // --- 歩数グラフ ---
-                    if (recentRecords.any((r) => r.steps != null && r.steps! > 0)) ...[
-                      _buildChartCard(
-                        context: context,
-                        title: '歩数・運動量',
-                        icon: Icons.directions_walk,
-                        color: const Color(0xFF4DB6AC),
-                        child: _buildStepsChart(recentRecords),
-                      ).animate().fade(delay: 200.ms).slideY(begin: 0.05),
-                      const SizedBox(height: 16),
-                    ],
+                    // セクション見出し
+                    Row(
+                      children: [
+                        Text(
+                          '${_selectedMonth.year}年${_selectedMonth.month}月のトレンド',
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${monthRecords.length}件の記録',
+                            style: const TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ).animate().fade(delay: 80.ms).slideY(begin: 0.05),
+                    const SizedBox(height: 14),
 
-                    // --- お薬手帳 ---
-                    if (recentRecords.any((r) => r.medications.isNotEmpty)) ...[
-                      _buildChartCard(
-                        context: context,
-                        title: 'お薬手帳 (服薬記録)',
-                        icon: Icons.medication,
-                        color: const Color(0xFFF06292),
-                        child: _buildMedicationAdherence(recentRecords),
-                      ).animate().fade(delay: 300.ms).slideY(begin: 0.05),
+                    // もし月間データが0件の場合
+                    if (monthRecords.isEmpty) ...[
+                      _buildEmptyStateCard(context).animate().fade(delay: 100.ms).slideY(begin: 0.05),
                       const SizedBox(height: 16),
-                    ],
+                    ] else ...[
+                      // --- 睡眠グラフ ---
+                      if (monthRecords.any((r) => r.sleepHours != null)) ...[
+                        _buildChartCard(
+                          context: context,
+                          title: '睡眠時間',
+                          icon: Icons.bedtime,
+                          color: const Color(0xFF7986CB),
+                          child: _buildSleepChart(monthRecords),
+                        ).animate().fade(delay: 100.ms).slideY(begin: 0.05),
+                        const SizedBox(height: 16),
+                      ],
 
-                    // --- 体重・体脂肪率グラフ ---
-                    if (recentRecords.any((r) => r.weight != null || r.bodyFat != null)) ...[
-                      WeightFatChartCard(records: recentRecords)
-                          .animate()
-                          .fade(delay: 400.ms)
-                          .slideY(begin: 0.05),
-                      const SizedBox(height: 16),
+                      // --- トレーニング推移 ---
+                      if (monthRecords.any((r) => r.workouts.isNotEmpty)) ...[
+                        _buildChartCard(
+                          context: context,
+                          title: '総負荷量 (ボリューム)',
+                          icon: Icons.fitness_center,
+                          color: Colors.amber.shade700,
+                          child: _buildVolumeChart(monthRecords),
+                        ).animate().fade(delay: 150.ms).slideY(begin: 0.05),
+                        const SizedBox(height: 16),
+                        _buildChartCard(
+                          context: context,
+                          title: '鍛えた部位バランス (月間合計)',
+                          icon: Icons.accessibility_new,
+                          color: Colors.deepOrange,
+                          child: _buildMuscleRadarChart(monthRecords),
+                        ).animate().fade(delay: 175.ms).slideY(begin: 0.05),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // --- 歩数グラフ ---
+                      if (monthRecords.any((r) => r.steps != null && r.steps! > 0)) ...[
+                        _buildChartCard(
+                          context: context,
+                          title: '歩数・運動量',
+                          icon: Icons.directions_walk,
+                          color: const Color(0xFF4DB6AC),
+                          child: _buildStepsChart(monthRecords),
+                        ).animate().fade(delay: 200.ms).slideY(begin: 0.05),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // --- お薬手帳 ---
+                      if (monthRecords.any((r) => r.medications.isNotEmpty)) ...[
+                        _buildChartCard(
+                          context: context,
+                          title: 'お薬手帳 (服薬記録)',
+                          icon: Icons.medication,
+                          color: const Color(0xFFF06292),
+                          child: _buildMedicationAdherence(monthRecords),
+                        ).animate().fade(delay: 300.ms).slideY(begin: 0.05),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // --- 体重・体脂肪率グラフ ---
+                      if (monthRecords.any((r) => r.weight != null || r.bodyFat != null)) ...[
+                        WeightFatChartCard(records: monthRecords)
+                            .animate()
+                            .fade(delay: 400.ms)
+                            .slideY(begin: 0.05),
+                        const SizedBox(height: 16),
+                      ],
                     ],
 
                     const SizedBox(height: 24),
@@ -138,16 +218,29 @@ class AnalyticsScreen extends StatelessWidget {
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('${DateTime.now().year}年 ${DateTime.now().month}月', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                  Text('${_selectedMonth.year}年 ${_selectedMonth.month}月', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                                   const SizedBox(height: 2),
                                   const Text('日付をタップして記録の確認・修正・削除', style: TextStyle(fontSize: 11, color: Colors.black45)),
                                 ],
                               ),
-                              const Icon(Icons.calendar_month, color: Colors.black54),
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.chevron_left_rounded, color: Colors.black87),
+                                    tooltip: '前月へ',
+                                    onPressed: _prevMonth,
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.chevron_right_rounded, color: Colors.black87),
+                                    tooltip: '次月へ',
+                                    onPressed: _nextMonth,
+                                  ),
+                                ],
+                              ),
                             ],
                           ),
                           const SizedBox(height: 16),
-                          _buildCalendarGrid(context, provider),
+                          _buildCalendarGrid(context, provider, _selectedMonth),
                         ],
                       ),
                     ).animate().fade(delay: 600.ms).slideY(begin: 0.05),
@@ -162,9 +255,235 @@ class AnalyticsScreen extends StatelessWidget {
     );
   }
 
+  // --- 月選択ヘッダーウィジェット ---
+  Widget _buildMonthSelectorHeader(BuildContext context, bool isCurrentMonth) {
+    return _buildGlassContainer(
+      context,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          IconButton(
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.black.withValues(alpha: 0.04),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 16, color: Colors.black87),
+            tooltip: '前月へ',
+            onPressed: _prevMonth,
+          ),
+          Column(
+            children: [
+              Text(
+                '${_selectedMonth.year}年 ${_selectedMonth.month}月',
+                style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: Colors.black87, letterSpacing: 0.5),
+              ),
+              if (!isCurrentMonth) ...[
+                const SizedBox(height: 4),
+                GestureDetector(
+                  onTap: _goToCurrentMonth,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.today, size: 11, color: Theme.of(context).colorScheme.primary),
+                        const SizedBox(width: 4),
+                        Text('今月に戻る', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          IconButton(
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.black.withValues(alpha: 0.04),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            icon: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.black87),
+            tooltip: '次月へ',
+            onPressed: _nextMonth,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- 月間サマリーカード ---
+  Widget _buildMonthSummaryCards(BuildContext context, List<HealthRecord> monthRecords, int daysInMonth) {
+    final sleepRecords = monthRecords.where((r) => r.sleepHours != null).toList();
+    final avgSleep = sleepRecords.isNotEmpty
+        ? (sleepRecords.map((r) => r.sleepHours!).reduce((a, b) => a + b) / sleepRecords.length).toStringAsFixed(1)
+        : '-';
+
+    final totalSteps = monthRecords.fold<int>(0, (sum, r) => sum + (r.steps ?? 0));
+    final avgSteps = monthRecords.isNotEmpty && totalSteps > 0
+        ? (totalSteps / monthRecords.length).round()
+        : 0;
+
+    final workoutDays = monthRecords.where((r) => r.workouts.isNotEmpty).length;
+    final totalVolume = monthRecords.fold<double>(
+      0.0,
+      (sum, r) => sum + r.workouts.fold(0.0, (wSum, w) => wSum + (w.weight * w.reps * w.sets)),
+    );
+
+    return _buildGlassContainer(
+      context,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.insights, size: 18, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 6),
+              Text(
+                '${_selectedMonth.month}月のまとめ',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildSummaryItem(
+                  icon: Icons.edit_calendar,
+                  color: Colors.blue.shade700,
+                  label: '記録日数',
+                  value: '${monthRecords.length}日',
+                  sub: '/ $daysInMonth日',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildSummaryItem(
+                  icon: Icons.bedtime,
+                  color: const Color(0xFF7986CB),
+                  label: '平均睡眠',
+                  value: avgSleep != '-' ? '${avgSleep}h' : '-',
+                  sub: sleepRecords.isNotEmpty ? '${sleepRecords.length}日' : '未記録',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _buildSummaryItem(
+                  icon: Icons.directions_walk,
+                  color: const Color(0xFF4DB6AC),
+                  label: '総歩数',
+                  value: totalSteps > 0 ? (totalSteps >= 10000 ? '${(totalSteps / 10000).toStringAsFixed(1)}万' : '$totalSteps') : '-',
+                  sub: avgSteps > 0 ? '平均 $avgSteps歩' : '未記録',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildSummaryItem(
+                  icon: Icons.fitness_center,
+                  color: Colors.amber.shade800,
+                  label: '筋トレ日数',
+                  value: '$workoutDays日',
+                  sub: totalVolume > 0 ? '${(totalVolume / 1000).toStringAsFixed(1)}k kg' : '未実施',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryItem({
+    required IconData icon,
+    required Color color,
+    required String label,
+    required String value,
+    required String sub,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.8)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 16, color: color),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(fontSize: 10, color: Colors.black54, fontWeight: FontWeight.w500)),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87)),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        sub,
+                        style: const TextStyle(fontSize: 9, color: Colors.black45),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- 空状態案内カード ---
+  Widget _buildEmptyStateCard(BuildContext context) {
+    return _buildGlassContainer(
+      context,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: Center(
+        child: Column(
+          children: [
+            const Icon(Icons.calendar_today_outlined, size: 36, color: Colors.black38),
+            const SizedBox(height: 10),
+            Text(
+              '${_selectedMonth.year}年${_selectedMonth.month}月の記録はまだありません',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              '下のカレンダーから日付をタップすると、過去の記録や予定を追加・編集できます。',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // --- お薬手帳ウィジェット ---
   Widget _buildMedicationAdherence(List<HealthRecord> records) {
-    // 過去7日間の全薬種を抽出
+    // 選択された月の全薬種を抽出
     final Set<String> uniqueMeds = {};
     for (var r in records) {
       for (var m in r.medications) {
@@ -183,9 +502,9 @@ class AnalyticsScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(medName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Wrap(
-                spacing: 16,
+                spacing: 8,
                 runSpacing: 8,
                 children: records.asMap().entries.map((entry) {
                   int idx = entry.key;
@@ -195,16 +514,16 @@ class AnalyticsScreen extends StatelessWidget {
                   return Column(
                     children: [
                       Container(
-                        width: 24,
-                        height: 24,
+                        width: 22,
+                        height: 22,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: taken ? const Color(0xFFF06292) : Colors.grey.withOpacity(0.2),
+                          color: taken ? const Color(0xFFF06292) : Colors.grey.withValues(alpha: 0.2),
                         ),
-                        child: taken ? const Icon(Icons.check, size: 14, color: Colors.white) : null,
+                        child: taken ? const Icon(Icons.check, size: 13, color: Colors.white) : null,
                       ),
-                      const SizedBox(height: 4),
-                      Text(dateFormats[idx], style: const TextStyle(fontSize: 10, color: Colors.black54)),
+                      const SizedBox(height: 3),
+                      Text(dateFormats[idx], style: const TextStyle(fontSize: 9, color: Colors.black54)),
                     ],
                   );
                 }).toList(),
@@ -230,6 +549,7 @@ class AnalyticsScreen extends StatelessWidget {
     }
 
     double chartMaxY = maxSleep > 10 ? (maxSleep + 2).ceilToDouble() : 12.0;
+    final double bottomInterval = _calculateBottomInterval(records.length);
 
     return SizedBox(
       height: 180,
@@ -281,7 +601,7 @@ class AnalyticsScreen extends StatelessWidget {
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                interval: 1,
+                interval: bottomInterval,
                 getTitlesWidget: (value, meta) {
                   int idx = value.toInt();
                   if (idx >= 0 && idx < records.length) {
@@ -336,6 +656,8 @@ class AnalyticsScreen extends StatelessWidget {
     }
     // チャートの最大値を確定させる
     double chartMaxY = maxVolume > 5000 ? maxVolume * 1.1 : 5000.0;
+    final barWidth = _calculateBarWidth(records.length);
+    final double bottomInterval = _calculateBottomInterval(records.length);
 
     List<BarChartGroupData> barGroups = [];
     for (int i = 0; i < records.length; i++) {
@@ -347,12 +669,12 @@ class AnalyticsScreen extends StatelessWidget {
             BarChartRodData(
               toY: volume,
               color: Colors.amber.shade700,
-              width: 16,
-              borderRadius: BorderRadius.circular(8), // ピル状により丸く
+              width: barWidth,
+              borderRadius: BorderRadius.circular(barWidth / 2),
               backDrawRodData: BackgroundBarChartRodData(
                 show: true,
                 toY: chartMaxY,
-                color: Colors.amber.withOpacity(0.1), // グラスモーフィズムに合う同系色
+                color: Colors.amber.withValues(alpha: 0.1),
               ),
             )
           ],
@@ -416,7 +738,7 @@ class AnalyticsScreen extends StatelessWidget {
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                interval: 1,
+                interval: bottomInterval,
                 getTitlesWidget: (value, meta) {
                   int idx = value.toInt();
                   if (idx >= 0 && idx < records.length) {
@@ -511,6 +833,8 @@ class AnalyticsScreen extends StatelessWidget {
     }
     
     double chartMaxY = maxSteps > 10000 ? maxSteps : 10000.0;
+    final barWidth = _calculateBarWidth(records.length);
+    final double bottomInterval = _calculateBottomInterval(records.length);
 
     List<BarChartGroupData> barGroups = [];
     for (int i = 0; i < records.length; i++) {
@@ -522,8 +846,8 @@ class AnalyticsScreen extends StatelessWidget {
             BarChartRodData(
               toY: steps,
               color: const Color(0xFF4DB6AC),
-              width: 16,
-              borderRadius: BorderRadius.circular(4),
+              width: barWidth,
+              borderRadius: BorderRadius.circular(barWidth / 2),
               backDrawRodData: BackgroundBarChartRodData(
                 show: true,
                 toY: chartMaxY,
@@ -591,7 +915,7 @@ class AnalyticsScreen extends StatelessWidget {
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                interval: 1,
+                interval: bottomInterval,
                 getTitlesWidget: (value, meta) {
                   int idx = value.toInt();
                   if (idx >= 0 && idx < records.length) {
@@ -669,10 +993,10 @@ class AnalyticsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildCalendarGrid(BuildContext context, HealthProvider healthProvider) {
+  Widget _buildCalendarGrid(BuildContext context, HealthProvider healthProvider, DateTime selectedMonth) {
     final now = DateTime.now();
-    final firstDayOfMonth = DateTime(now.year, now.month, 1);
-    final daysInMonth = DateUtils.getDaysInMonth(now.year, now.month);
+    final firstDayOfMonth = DateTime(selectedMonth.year, selectedMonth.month, 1);
+    final daysInMonth = DateUtils.getDaysInMonth(selectedMonth.year, selectedMonth.month);
     final offset = firstDayOfMonth.weekday == 7 ? 0 : firstDayOfMonth.weekday;
     
     return Column(
@@ -698,12 +1022,12 @@ class AnalyticsScreen extends StatelessWidget {
             if (index < offset) return const SizedBox.shrink();
             
             final day = index - offset + 1;
-            final date = DateTime(now.year, now.month, day);
+            final date = DateTime(selectedMonth.year, selectedMonth.month, day);
             final record = healthProvider.getRecordForDate(date);
             
             bool hasBadHealth = record != null && (record.symptoms.isNotEmpty || record.medications.isNotEmpty || (record.conditionScore != null && record.conditionScore! < 5));
             bool hasWorkout = record != null && record.workouts.isNotEmpty;
-            bool isToday = day == now.day && now.month == date.month && now.year == date.year;
+            bool isToday = day == now.day && selectedMonth.month == now.month && selectedMonth.year == now.year;
 
             return InkWell(
               borderRadius: BorderRadius.circular(12),
@@ -715,19 +1039,19 @@ class AnalyticsScreen extends StatelessWidget {
                   color: isToday
                       ? Theme.of(context).colorScheme.primary
                       : (record != null
-                          ? Colors.white.withOpacity(0.85)
-                          : Colors.white.withOpacity(0.4)),
+                          ? Colors.white.withValues(alpha: 0.85)
+                          : Colors.white.withValues(alpha: 0.4)),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: (hasBadHealth || hasWorkout)
                         ? Theme.of(context).colorScheme.secondary
-                        : (record != null ? Colors.grey.withOpacity(0.3) : Colors.transparent),
+                        : (record != null ? Colors.grey.withValues(alpha: 0.3) : Colors.transparent),
                     width: 1.5,
                   ),
                   boxShadow: isToday
-                      ? [BoxShadow(color: Theme.of(context).colorScheme.primary.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))]
+                      ? [BoxShadow(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 4))]
                       : (record != null
-                          ? [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 2))]
+                          ? [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 2))]
                           : []),
                 ),
                 child: Center(
@@ -1090,6 +1414,9 @@ class _WeightFatChartCardState extends State<WeightFatChartCard> {
     if (minY < 0) minY = 0;
 
     double interval = ((maxY - minY) / 3).clamp(0.5, 10.0);
+    final double bottomInterval = records.length <= 7
+        ? 1.0
+        : (records.length <= 14 ? 2.0 : (records.length / 6).ceilToDouble());
 
     return LineChart(
       LineChartData(
@@ -1142,7 +1469,7 @@ class _WeightFatChartCardState extends State<WeightFatChartCard> {
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              interval: 1,
+              interval: bottomInterval,
               getTitlesWidget: (value, meta) {
                 int idx = value.toInt();
                 if (idx >= 0 && idx < records.length) {
@@ -1243,6 +1570,9 @@ class _WeightFatChartCardState extends State<WeightFatChartCard> {
     }
 
     double interval = ((maxY - minY) / 3).clamp(0.5, 10.0);
+    final double bottomInterval = records.length <= 7
+        ? 1.0
+        : (records.length <= 14 ? 2.0 : (records.length / 6).ceilToDouble());
 
     return LineChart(
       LineChartData(
@@ -1326,7 +1656,7 @@ class _WeightFatChartCardState extends State<WeightFatChartCard> {
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              interval: 1,
+              interval: bottomInterval,
               getTitlesWidget: (value, meta) {
                 int idx = value.toInt();
                 if (idx >= 0 && idx < records.length) {
