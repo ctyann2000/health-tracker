@@ -2,26 +2,42 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/health_record.dart';
+import '../models/prescription_record.dart';
 
 class HealthProvider with ChangeNotifier {
   List<HealthRecord> _records = [];
+  List<PrescriptionRecord> _prescriptions = [];
   bool _isLoading = true;
 
   List<HealthRecord> get records => _records;
+  List<PrescriptionRecord> get prescriptions => _prescriptions;
   bool get isLoading => _isLoading;
 
   HealthProvider() {
-    _loadRecords();
+    _loadAllData();
   }
 
-  Future<void> _loadRecords() async {
+  Future<void> _loadAllData() async {
     final prefs = await SharedPreferences.getInstance();
-    final String? recordsJson = prefs.getString('health_records');
     
+    // 1. 体調・服薬記録の読み込み
+    final String? recordsJson = prefs.getString('health_records');
     if (recordsJson != null) {
       final List<dynamic> decoded = jsonDecode(recordsJson);
       _records = decoded.map((e) => HealthRecord.fromJson(e)).toList();
     }
+
+    // 2. お薬手帳・処方箋データの読み込み
+    final String? presJson = prefs.getString('prescription_records');
+    if (presJson != null) {
+      final List<dynamic> decodedPres = jsonDecode(presJson);
+      _prescriptions = decodedPres.map((e) => PrescriptionRecord.fromJson(e)).toList();
+    } else {
+      // 初回起動時: ユーザーの処方箋実例（栗田皮フ科）をサンプルとして初期プリセット
+      _prescriptions = getInitialSamplePrescriptions();
+      await savePrescriptions();
+    }
+
     _isLoading = false;
     notifyListeners();
   }
@@ -30,6 +46,12 @@ class HealthProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final String encoded = jsonEncode(_records.map((e) => e.toJson()).toList());
     await prefs.setString('health_records', encoded);
+  }
+
+  Future<void> savePrescriptions() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String encoded = jsonEncode(_prescriptions.map((e) => e.toJson()).toList());
+    await prefs.setString('prescription_records', encoded);
   }
 
   void addRecord(HealthRecord record) {
@@ -174,5 +196,81 @@ class HealthProvider with ChangeNotifier {
     await prefs.remove('health_records');
     _records.clear();
     notifyListeners();
+  }
+
+  // --- お薬手帳・処方データ管理 ---
+
+  /// 新しい処方箋レコードを追加
+  void addPrescription(PrescriptionRecord prescription) {
+    _prescriptions.removeWhere((p) => p.id == prescription.id);
+    _prescriptions.insert(0, prescription);
+    _prescriptions.sort((a, b) => b.date.compareTo(a.date)); // 処方日の降順
+    notifyListeners();
+    savePrescriptions();
+  }
+
+  /// 処方箋レコードを削除
+  void deletePrescription(String id) {
+    _prescriptions.removeWhere((p) => p.id == id);
+    notifyListeners();
+    savePrescriptions();
+  }
+
+  /// サンプルデータにリセット
+  void resetPrescriptionsToDefault() {
+    _prescriptions = getInitialSamplePrescriptions();
+    notifyListeners();
+    savePrescriptions();
+  }
+
+  /// 初期サンプル処方データ（実例：栗田皮フ科・オリーブ薬局・処方薬4種）
+  static List<PrescriptionRecord> getInitialSamplePrescriptions() {
+    return [
+      PrescriptionRecord(
+        id: 'sample_kurita_dermatology_20260415',
+        date: DateTime(2026, 4, 15),
+        hospitalName: '医療法人社団 栗田会 栗田皮フ科',
+        department: '【皮膚科】',
+        doctorName: '栗田 依幸',
+        pharmacyName: 'オリーブ薬局幕張本郷店',
+        pharmacistName: 'なし',
+        cost: 1180,
+        medications: [
+          PrescriptionMedication(
+            name: 'リンデロン-Vローション',
+            dosage: '◆外用 塗布◆\n総量:20mL',
+            category: '外用',
+            efficacy: 'ステロイドの外用薬（強さ: ストロング）で、湿疹や皮膚炎、頭皮などの炎症、赤み、かゆみを速やかに鎮めます。液状で毛髪部にも塗りやすい製剤です。',
+            sideEffects: '塗布部の刺激感、皮膚の感染症（毛嚢炎など）、長期連用による皮膚の菲薄化・赤みなど。',
+            precautions: '目や目の周囲、傷口への使用は避けてください。指示された期間・部位のみに使用し、自己判断で長期連用しないでください。',
+          ),
+          PrescriptionMedication(
+            name: 'リンデロン-V軟膏0.12%',
+            dosage: '◆外用 塗布◆\n総量:10g',
+            category: '外用',
+            efficacy: 'ステロイドの軟膏（強さ: ストロング）で、皮膚の湿疹・皮膚炎・かゆみなどの強い炎症を鎮めます。刺激が少なく、ジュクジュクした患部や乾燥した患部の両方に適しています。',
+            sideEffects: '塗布部の発赤、刺激感、毛嚢炎。大量・長期使用時の皮膚萎縮、毛細血管拡張など。',
+            precautions: '顔面への長期連用は避け、医師に指示された部位にのみ薄く塗布してください。症状が改善したら指示に従って減量または中止します。',
+          ),
+          PrescriptionMedication(
+            name: 'ヒルドイドソフト軟膏0.3%',
+            dosage: '◆外用 塗布◆\n総量:10g',
+            category: '外用',
+            efficacy: 'ヘパリン類似物質を含み、皮膚の水分保持能力（保湿力）を高め、血行を促進して皮膚の乾燥や角化・荒れを防ぎます。アトピー性皮膚炎や乾燥肌のスキンケアにも広く使われます。',
+            sideEffects: 'まれに皮膚炎、かゆみ、発赤、刺激感などが現れることがあります。',
+            precautions: '血行促進作用があるため、出血性血液疾患のある方や、出血している傷口・びらん面には使用しないでください。',
+          ),
+          PrescriptionMedication(
+            name: '(AG)レボセチリジン塩酸塩錠5mg「武田テバ」',
+            dosage: '◆内服 分1 医師の指示通り◆\n1日の使用量:1錠 / 総量:14日分',
+            category: '内服',
+            efficacy: '第2世代抗ヒスタミン薬で、アレルギー性鼻炎（花粉症等）によるくしゃみ・鼻水・鼻づまりや、じんましん・湿疹に伴う皮膚のかゆみを強力に抑えます。',
+            sideEffects: '眠気、倦怠感、口渇（口の渇き）、頭痛、吐き気、まれに肝機能値上昇など。',
+            precautions: '眠気を催すことがあるため、服用後は自動車の運転や危険を伴う機械の操作は避けてください。アルコールとの併用は眠気が強まるため控えてください。',
+          ),
+        ],
+        notes: '皮膚アレルギー症状および湿疹の治療処方',
+      ),
+    ];
   }
 }

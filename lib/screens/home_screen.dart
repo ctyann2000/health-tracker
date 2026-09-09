@@ -9,6 +9,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../services/gemini_service.dart';
 import '../providers/health_provider.dart';
 import '../models/health_record.dart';
+import '../models/prescription_record.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -155,6 +156,19 @@ class _HomeScreenState extends State<HomeScreen> {
           } else {
             Provider.of<HealthProvider>(context, listen: false).addRecord(record);
             
+            // 処方箋・お薬手帳データがあれば処方レコードとして登録
+            if (result['prescription'] != null && result['prescription'] is Map) {
+              try {
+                final presMap = Map<String, dynamic>.from(result['prescription']);
+                final presRecord = PrescriptionRecord.fromJson(presMap);
+                if (presRecord.medications.isNotEmpty) {
+                  Provider.of<HealthProvider>(context, listen: false).addPrescription(presRecord);
+                }
+              } catch (e) {
+                debugPrint('Prescription parse error: $e');
+              }
+            }
+
             final coachReply = (result['reply'] as String?)?.trim() ?? "";
             
             final List<String> summaryLines = [];
@@ -165,6 +179,10 @@ class _HomeScreenState extends State<HomeScreen> {
             }
             if (record.symptoms.isNotEmpty) {
               summaryLines.add("症状: ${record.symptoms.join(', ')}");
+            }
+            if (result['prescription'] != null && result['prescription'] is Map) {
+              final hName = result['prescription']['hospital_name'] ?? '医療機関';
+              summaryLines.add("お薬手帳: $hNameの処方を登録");
             }
             if (record.medications.isNotEmpty) {
               final meds = record.medications.map((m) => m.time != null ? "${m.time} ${m.name}" : m.name).join(', ');

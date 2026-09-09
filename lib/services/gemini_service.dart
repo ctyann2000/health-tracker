@@ -151,6 +151,13 @@ class GeminiService {
 10. calories: 消費カロリー（整数、kcal、アクティブと安静時の合計など、不明ならnull）
 11. sleepHours: 睡眠時間（数値、時間、例: 7.5、不明ならnull）
 12. workouts: 筋トレなどの運動リスト。各運動は {"name": "種目名", "weight": 重さ(kg, 数値), "reps": 回数(整数), "sets": セット数(整数)}。不明な数値項目は0。なければ空配列。
+13. prescription: 処方箋・医療機関での処方情報がある場合のみ以下のオブジェクト（なければnull）。
+    - hospital_name: 病院・クリニック名（例: 栗田皮フ科、不明ならnull）
+    - department: 診療科（例: 皮膚科、不明ならnull）
+    - doctor_name: 医師名（不明ならnull）
+    - pharmacy_name: 薬局名（例: オリーブ薬局、不明ならnull）
+    - cost: 自己負担額・医療費（整数、円、不明ならnull）
+    - medications: 処方薬の詳細リスト。各薬は {"name": "薬品名", "dosage": "用法用量・規格", "category": "外用/内服/頓服", "efficacy": "効能・効果のわかりやすい解説", "side_effects": "主な副作用", "precautions": "注意事項"}。
 
 入力テキスト:
 "$userInput"
@@ -170,7 +177,8 @@ class GeminiService {
   "sleepHours": 7.5,
   "workouts": [
     {"name": "ベンチプレス", "weight": 50, "reps": 10, "sets": 3}
-  ]
+  ],
+  "prescription": null
 }
 """;
 
@@ -223,11 +231,18 @@ class GeminiService {
 4. 処方箋や薬袋・お薬手帳の場合:
    - 薬品名とおおよその服用時間を medications に格納
    - 症状があれば symptoms に格納
+   - 処方情報全体を prescription に構造化して格納:
+     - hospital_name: 病院・クリニック名（例: 栗田皮フ科）
+     - department: 診療科（例: 皮膚科）
+     - doctor_name: 医師名
+     - pharmacy_name: 調剤薬局名（例: オリーブ薬局幕張本郷店）
+     - cost: 医療費の合計・自己負担額（数値、円）
+     - medications: 各薬品の詳細。name(薬品名), dosage(用法用量・総量), category(外用/内服/頓服), efficacy(効能・効果の解説), side_effects(主な副作用), precautions(注意事項)
 5. ユーザーからの追加コメント: "${extraInput ?? '特になし'}"
 
 出力フォーマット（JSON）:
 {
-  "reply": "処方箋とお薬の情報を確認し記録しました。お体に気をつけて、用法用量を守ってお大事になさってくださいね。",
+  "reply": "処方箋とお薬の情報を確認し、お薬手帳に記録しました。お体に気をつけて、用法用量を守ってお大事になさってくださいね。",
   "condition_score": 1〜10の整数 (指定または体調が推測できれば設定、不明ならnull),
   "symptoms": ["症状名"],
   "medications": [
@@ -240,7 +255,24 @@ class GeminiService {
   "bmr": 整数 (kcal、不明ならnull),
   "calories": 整数 (kcal、不明ならnull),
   "sleepHours": 小数 (時間、不明ならnull),
-  "workouts": []
+  "workouts": [],
+  "prescription": {
+    "hospital_name": "医療法人社団 栗田会 栗田皮フ科",
+    "department": "皮膚科",
+    "doctor_name": "栗田 依幸",
+    "pharmacy_name": "オリーブ薬局幕張本郷店",
+    "cost": 1180,
+    "medications": [
+      {
+        "name": "リンデロン-Vローション",
+        "dosage": "◆外用 塗布◆ 総量:20mL",
+        "category": "外用",
+        "efficacy": "ステロイド外用薬で皮膚の赤みやかゆみを抑えます。",
+        "side_effects": "刺激感、長期連用時の皮膚菲薄化など",
+        "precautions": "目の周囲を避け、指示された部位のみ使用"
+      }
+    ]
+  }
 }
 Markdownのコードブロック(```json)は含めず、純粋なJSON文字列のみを出力してください。
 ''';
