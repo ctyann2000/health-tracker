@@ -117,13 +117,10 @@ class AnalyticsScreen extends StatelessWidget {
 
                     // --- 体重・体脂肪率グラフ ---
                     if (recentRecords.any((r) => r.weight != null || r.bodyFat != null)) ...[
-                      _buildChartCard(
-                        context: context,
-                        title: '体重・体脂肪率',
-                        icon: Icons.monitor_weight,
-                        color: const Color(0xFF9575CD),
-                        child: _buildWeightChart(recentRecords),
-                      ).animate().fade(delay: 400.ms).slideY(begin: 0.05),
+                      WeightFatChartCard(records: recentRecords)
+                          .animate()
+                          .fade(delay: 400.ms)
+                          .slideY(begin: 0.05),
                       const SizedBox(height: 16),
                     ],
 
@@ -224,15 +221,55 @@ class AnalyticsScreen extends StatelessWidget {
       }
     }
 
+    double chartMaxY = maxSleep > 10 ? (maxSleep + 2).ceilToDouble() : 12.0;
+
     return SizedBox(
       height: 180,
       child: LineChart(
         LineChartData(
-          gridData: FlGridData(show: false),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: 3,
+            getDrawingHorizontalLine: (value) => FlLine(
+              color: Colors.black.withValues(alpha: 0.05),
+              strokeWidth: 1,
+              dashArray: [4, 4],
+            ),
+          ),
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipColor: (spot) => const Color(0xFF1E293B),
+              getTooltipItems: (touchedSpots) => touchedSpots.map((s) {
+                int idx = s.x.toInt();
+                return LineTooltipItem(
+                  '${DateFormat('M/d').format(records[idx].date)}\n睡眠: ${s.y.toStringAsFixed(1)} 時間',
+                  const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                );
+              }).toList(),
+            ),
+          ),
           titlesData: FlTitlesData(
-            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 34,
+                interval: 3,
+                getTitlesWidget: (value, meta) {
+                  if (value == meta.max) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Text(
+                      '${value.toInt()}h',
+                      style: const TextStyle(fontSize: 10, color: Colors.black54, fontWeight: FontWeight.w600),
+                      textAlign: TextAlign.right,
+                    ),
+                  );
+                },
+              ),
+            ),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
@@ -256,16 +293,24 @@ class AnalyticsScreen extends StatelessWidget {
               spots: spots,
               isCurved: true,
               color: const Color(0xFF7986CB),
-              barWidth: 4,
+              barWidth: 3.5,
               isStrokeCapRound: true,
-              dotData: FlDotData(show: true),
+              dotData: FlDotData(
+                show: true,
+                getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                  radius: 4,
+                  color: Colors.white,
+                  strokeWidth: 2.5,
+                  strokeColor: const Color(0xFF7986CB),
+                ),
+              ),
               belowBarData: BarAreaData(
                 show: true,
-                color: const Color(0xFF7986CB).withOpacity(0.2),
+                color: const Color(0xFF7986CB).withValues(alpha: 0.15),
               ),
             ),
           ],
-          maxY: maxSleep > 10 ? maxSleep + 2 : 12,
+          maxY: chartMaxY,
           minY: 0,
         ),
       ),
@@ -307,6 +352,9 @@ class AnalyticsScreen extends StatelessWidget {
       );
     }
 
+    double interval = chartMaxY / 4;
+    if (interval < 500) interval = 1000;
+
     return SizedBox(
       height: 180,
       child: BarChart(
@@ -314,19 +362,49 @@ class AnalyticsScreen extends StatelessWidget {
           barTouchData: BarTouchData(
             enabled: true,
             touchTooltipData: BarTouchTooltipData(
+              getTooltipColor: (group) => const Color(0xFF1E293B),
               getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                int idx = group.x;
+                String dateStr = (idx >= 0 && idx < records.length) ? DateFormat('M/d').format(records[idx].date) : '';
                 return BarTooltipItem(
-                  '${rod.toY.toInt()}',
-                  const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  '$dateStr\n負荷: ${rod.toY.toInt()} kg',
+                  const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                 );
               },
             ),
           ),
-          gridData: FlGridData(show: false),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: interval,
+            getDrawingHorizontalLine: (value) => FlLine(
+              color: Colors.black.withValues(alpha: 0.05),
+              strokeWidth: 1,
+              dashArray: [4, 4],
+            ),
+          ),
           titlesData: FlTitlesData(
-            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 38,
+                interval: interval,
+                getTitlesWidget: (value, meta) {
+                  if (value == meta.max || value == 0) return const SizedBox.shrink();
+                  String text = value >= 1000 ? '${(value / 1000).toStringAsFixed(1)}k' : '${value.toInt()}';
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Text(
+                      text,
+                      style: const TextStyle(fontSize: 10, color: Colors.black54, fontWeight: FontWeight.w600),
+                      textAlign: TextAlign.right,
+                    ),
+                  );
+                },
+              ),
+            ),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
@@ -441,7 +519,7 @@ class AnalyticsScreen extends StatelessWidget {
               backDrawRodData: BackgroundBarChartRodData(
                 show: true,
                 toY: chartMaxY,
-                color: Colors.grey.withOpacity(0.1),
+                color: Colors.black.withValues(alpha: 0.04),
               ),
             )
           ],
@@ -449,15 +527,59 @@ class AnalyticsScreen extends StatelessWidget {
       );
     }
 
+    double interval = chartMaxY / 4;
+    if (interval < 2000) interval = 2500;
+
     return SizedBox(
       height: 180,
       child: BarChart(
         BarChartData(
-          gridData: FlGridData(show: false),
+          barTouchData: BarTouchData(
+            enabled: true,
+            touchTooltipData: BarTouchTooltipData(
+              getTooltipColor: (group) => const Color(0xFF1E293B),
+              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                int idx = group.x;
+                String dateStr = (idx >= 0 && idx < records.length) ? DateFormat('M/d').format(records[idx].date) : '';
+                return BarTooltipItem(
+                  '$dateStr\n歩数: ${rod.toY.toInt()} 歩',
+                  const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                );
+              },
+            ),
+          ),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: interval,
+            getDrawingHorizontalLine: (value) => FlLine(
+              color: Colors.black.withValues(alpha: 0.05),
+              strokeWidth: 1,
+              dashArray: [4, 4],
+            ),
+          ),
           titlesData: FlTitlesData(
-            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 38,
+                interval: interval,
+                getTitlesWidget: (value, meta) {
+                  if (value == meta.max || value == 0) return const SizedBox.shrink();
+                  String text = value >= 1000 ? '${(value / 1000).toStringAsFixed(0)}k' : '${value.toInt()}';
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Text(
+                      text,
+                      style: const TextStyle(fontSize: 10, color: Colors.black54, fontWeight: FontWeight.w600),
+                      textAlign: TextAlign.right,
+                    ),
+                  );
+                },
+              ),
+            ),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
@@ -482,79 +604,9 @@ class AnalyticsScreen extends StatelessWidget {
     );
   }
 
-  // --- 体重グラフ ---
-  Widget _buildWeightChart(List<HealthRecord> records) {
-    List<FlSpot> weightSpots = [];
-    List<FlSpot> fatSpots = [];
-    double maxVal = 0, minVal = 1000;
-    
-    for (int i = 0; i < records.length; i++) {
-      if (records[i].weight != null) {
-        weightSpots.add(FlSpot(i.toDouble(), records[i].weight!));
-        if (records[i].weight! > maxVal) maxVal = records[i].weight!;
-        if (records[i].weight! < minVal) minVal = records[i].weight!;
-      }
-      if (records[i].bodyFat != null) {
-        fatSpots.add(FlSpot(i.toDouble(), records[i].bodyFat!));
-        if (records[i].bodyFat! > maxVal) maxVal = records[i].bodyFat!;
-        if (records[i].bodyFat! < minVal) minVal = records[i].bodyFat!;
-      }
-    }
-    if (minVal == 1000) minVal = 0;
 
-    return SizedBox(
-      height: 180,
-      child: LineChart(
-        LineChartData(
-          gridData: FlGridData(show: false),
-          titlesData: FlTitlesData(
-            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                interval: 1,
-                getTitlesWidget: (value, meta) {
-                  int idx = value.toInt();
-                  if (idx >= 0 && idx < records.length) {
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text(DateFormat('M/d').format(records[idx].date), style: const TextStyle(fontSize: 10, color: Colors.black54)),
-                    );
-                  }
-                  return const Text('');
-                },
-              ),
-            ),
-          ),
-          borderData: FlBorderData(show: false),
-          lineBarsData: [
-            if (weightSpots.isNotEmpty)
-              LineChartBarData(
-                spots: weightSpots,
-                isCurved: true,
-                color: const Color(0xFF9575CD),
-                barWidth: 4,
-                isStrokeCapRound: true,
-                dotData: FlDotData(show: true),
-              ),
-            if (fatSpots.isNotEmpty)
-              LineChartBarData(
-                spots: fatSpots,
-                isCurved: true,
-                color: Colors.orange,
-                barWidth: 4,
-                isStrokeCapRound: true,
-                dotData: FlDotData(show: true),
-              ),
-          ],
-          maxY: maxVal + 5,
-          minY: (minVal - 5 > 0) ? minVal - 5 : 0,
-        ),
-      ),
-    );
-  }
+
+
 
   Widget _buildChartCard({required BuildContext context, required String title, required IconData icon, required Color color, required Widget child}) {
     return _buildGlassContainer(
@@ -675,6 +727,650 @@ class AnalyticsScreen extends StatelessWidget {
           },
         ),
       ],
+    );
+  }
+}
+
+// ============================================================================
+// 体重・体脂肪率グラフ専用カード (洗練されたスケール・目盛り・タブ切り替え対応)
+// ============================================================================
+class WeightFatChartCard extends StatefulWidget {
+  final List<HealthRecord> records;
+
+  const WeightFatChartCard({super.key, required this.records});
+
+  @override
+  State<WeightFatChartCard> createState() => _WeightFatChartCardState();
+}
+
+class _WeightFatChartCardState extends State<WeightFatChartCard> {
+  // 0: 体重, 1: 体脂肪率, 2: 両方
+  int _selectedTab = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final hasWeight = widget.records.any((r) => r.weight != null);
+    final hasFat = widget.records.any((r) => r.bodyFat != null);
+    if (!hasWeight && hasFat) {
+      _selectedTab = 1;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final records = widget.records;
+
+    // 最新値と前回値の取得
+    HealthRecord? latestWRecord;
+    HealthRecord? prevWRecord;
+    HealthRecord? latestFRecord;
+    HealthRecord? prevFRecord;
+
+    for (int i = records.length - 1; i >= 0; i--) {
+      if (records[i].weight != null) {
+        if (latestWRecord == null) {
+          latestWRecord = records[i];
+        } else {
+          prevWRecord ??= records[i];
+        }
+      }
+      if (records[i].bodyFat != null) {
+        if (latestFRecord == null) {
+          latestFRecord = records[i];
+        } else {
+          prevFRecord ??= records[i];
+        }
+      }
+    }
+
+    final double? latestWeight = latestWRecord?.weight;
+    final double? weightDiff = (latestWRecord != null && prevWRecord != null)
+        ? (latestWRecord.weight! - prevWRecord.weight!)
+        : null;
+
+    final double? latestFat = latestFRecord?.bodyFat;
+    final double? fatDiff = (latestFRecord != null && prevFRecord != null)
+        ? (latestFRecord.bodyFat! - prevFRecord.bodyFat!)
+        : null;
+
+    final bool hasWeight = records.any((r) => r.weight != null);
+    final bool hasFat = records.any((r) => r.bodyFat != null);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withValues(alpha: 0.6),
+                Colors.white.withValues(alpha: 0.3),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ヘッダー部
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF9575CD).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.monitor_weight, size: 20, color: Color(0xFF7C4DFF)),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    '体重・体脂肪率',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
+                  ),
+                  const Spacer(),
+                  // 最新値サマリーバッジ
+                  if (latestWeight != null)
+                    _buildValueBadge(
+                      label: '体重',
+                      value: '${latestWeight.toStringAsFixed(1)}kg',
+                      diff: weightDiff,
+                      color: const Color(0xFF7C4DFF),
+                    ),
+                  if (latestWeight != null && latestFat != null)
+                    const SizedBox(width: 6),
+                  if (latestFat != null)
+                    _buildValueBadge(
+                      label: '体脂肪',
+                      value: '${latestFat.toStringAsFixed(1)}%',
+                      diff: fatDiff,
+                      color: Colors.orange.shade800,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 14),
+
+              // タブ切り替え（体重・体脂肪率・両方）
+              if (hasWeight && hasFat) ...[
+                Container(
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  padding: const EdgeInsets.all(2.5),
+                  child: Row(
+                    children: [
+                      _buildTabButton(0, '体重 (kg)', const Color(0xFF7C4DFF)),
+                      _buildTabButton(1, '体脂肪率 (%)', Colors.orange.shade800),
+                      _buildTabButton(2, '両方 (2軸)', Colors.teal.shade700),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
+
+              // グラフ本体
+              SizedBox(
+                height: 190,
+                child: _buildChart(records, hasWeight, hasFat),
+              ),
+
+              // 両方モードのときの凡例
+              if (_selectedTab == 2 && hasWeight && hasFat) ...[
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildLegendItem('体重 (kg) [左軸]', const Color(0xFF7C4DFF)),
+                    const SizedBox(width: 16),
+                    _buildLegendItem('体脂肪率 (%) [右軸]', Colors.orange.shade800),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLegendItem(String text, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(text, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  Widget _buildTabButton(int index, String label, Color activeColor) {
+    final isSelected = _selectedTab == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _selectedTab = index),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.06),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    )
+                  ]
+                : null,
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+              color: isSelected ? activeColor : Colors.black54,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildValueBadge({
+    required String label,
+    required String value,
+    required double? diff,
+    required Color color,
+  }) {
+    String diffText = '';
+    if (diff != null) {
+      if (diff > 0) {
+        diffText = '+${diff.toStringAsFixed(1)}';
+      } else if (diff < 0) {
+        diffText = diff.toStringAsFixed(1);
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            value,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
+          ),
+          if (diffText.isNotEmpty) ...[
+            const SizedBox(width: 2),
+            Text(
+              diffText,
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.w600,
+                color: diff != null && diff > 0 ? Colors.red.shade400 : Colors.blue.shade600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChart(List<HealthRecord> records, bool hasWeight, bool hasFat) {
+    if (_selectedTab == 0 || (!hasFat && hasWeight)) {
+      return _buildSingleLineChart(
+        records: records,
+        getValue: (r) => r.weight,
+        unit: 'kg',
+        color: const Color(0xFF7C4DFF),
+        label: '体重',
+      );
+    } else if (_selectedTab == 1 || (!hasWeight && hasFat)) {
+      return _buildSingleLineChart(
+        records: records,
+        getValue: (r) => r.bodyFat,
+        unit: '%',
+        color: Colors.orange.shade800,
+        label: '体脂肪率',
+      );
+    } else {
+      return _buildDualLineChart(records);
+    }
+  }
+
+  Widget _buildSingleLineChart({
+    required List<HealthRecord> records,
+    required double? Function(HealthRecord) getValue,
+    required String unit,
+    required Color color,
+    required String label,
+  }) {
+    List<FlSpot> spots = [];
+    double minVal = double.infinity;
+    double maxVal = -double.infinity;
+
+    for (int i = 0; i < records.length; i++) {
+      final val = getValue(records[i]);
+      if (val != null) {
+        spots.add(FlSpot(i.toDouble(), val));
+        if (val < minVal) minVal = val;
+        if (val > maxVal) maxVal = val;
+      }
+    }
+
+    if (spots.isEmpty) {
+      return const Center(child: Text('データがありません', style: TextStyle(color: Colors.black45, fontSize: 12)));
+    }
+
+    // スケール計算
+    double range = maxVal - minVal;
+    double pad = range < 1.0 ? 1.5 : range * 0.25;
+    double minY = (minVal - pad).floorToDouble();
+    double maxY = (maxVal + pad).ceilToDouble();
+    if (maxY - minY < 3) maxY = minY + 3;
+    if (minY < 0) minY = 0;
+
+    double interval = ((maxY - minY) / 3).clamp(0.5, 10.0);
+
+    return LineChart(
+      LineChartData(
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: interval,
+          getDrawingHorizontalLine: (value) => FlLine(
+            color: Colors.black.withValues(alpha: 0.05),
+            strokeWidth: 1,
+            dashArray: [4, 4],
+          ),
+        ),
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipColor: (spot) => const Color(0xFF1E293B),
+            getTooltipItems: (touchedSpots) => touchedSpots.map((s) {
+              int idx = s.x.toInt();
+              String dateStr = (idx >= 0 && idx < records.length)
+                  ? DateFormat('M/d').format(records[idx].date)
+                  : '';
+              return LineTooltipItem(
+                '$dateStr\n$label: ${s.y.toStringAsFixed(1)} $unit',
+                const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+              );
+            }).toList(),
+          ),
+        ),
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 44,
+              interval: interval,
+              getTitlesWidget: (value, meta) {
+                if (value == meta.max || value == meta.min) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Text(
+                    value.toStringAsFixed(1),
+                    style: const TextStyle(fontSize: 10, color: Colors.black54, fontWeight: FontWeight.w600),
+                    textAlign: TextAlign.right,
+                  ),
+                );
+              },
+            ),
+          ),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: 1,
+              getTitlesWidget: (value, meta) {
+                int idx = value.toInt();
+                if (idx >= 0 && idx < records.length) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      DateFormat('M/d').format(records[idx].date),
+                      style: const TextStyle(fontSize: 10, color: Colors.black54),
+                    ),
+                  );
+                }
+                return const Text('');
+              },
+            ),
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        minX: -0.25,
+        maxX: records.length <= 1 ? 0.25 : (records.length - 1).toDouble() + 0.25,
+        minY: minY,
+        maxY: maxY,
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: spots.length > 2,
+            curveSmoothness: 0.3,
+            color: color,
+            barWidth: 3.5,
+            isStrokeCapRound: true,
+            dotData: FlDotData(
+              show: true,
+              getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                radius: 4.5,
+                color: Colors.white,
+                strokeWidth: 2.5,
+                strokeColor: color,
+              ),
+            ),
+            belowBarData: BarAreaData(
+              show: true,
+              color: color.withValues(alpha: 0.12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDualLineChart(List<HealthRecord> records) {
+    List<FlSpot> weightSpots = [];
+    List<FlSpot> fatSpots = [];
+    double minW = double.infinity, maxW = -double.infinity;
+    double minF = double.infinity, maxF = -double.infinity;
+
+    for (int i = 0; i < records.length; i++) {
+      if (records[i].weight != null) {
+        final w = records[i].weight!;
+        weightSpots.add(FlSpot(i.toDouble(), w));
+        if (w < minW) minW = w;
+        if (w > maxW) maxW = w;
+      }
+      if (records[i].bodyFat != null) {
+        final f = records[i].bodyFat!;
+        if (f < minF) minF = f;
+        if (f > maxF) maxF = f;
+      }
+    }
+
+    if (weightSpots.isEmpty && fatSpots.isEmpty) {
+      return const Center(child: Text('データがありません', style: TextStyle(color: Colors.black45, fontSize: 12)));
+    }
+
+    // 体重スケール
+    double rangeW = maxW - minW;
+    double padW = rangeW < 1.0 ? 1.5 : rangeW * 0.25;
+    double minY = (minW - padW).floorToDouble();
+    double maxY = (maxW + padW).ceilToDouble();
+    if (maxY - minY < 3) maxY = minY + 3;
+    if (minY < 0) minY = 0;
+
+    // 体脂肪率スケール
+    double rangeF = maxF - minF;
+    double padF = rangeF < 1.0 ? 1.5 : rangeF * 0.25;
+    double minFatY = (minF - padF).floorToDouble();
+    double maxFatY = (maxF + padF).ceilToDouble();
+    if (maxFatY - minFatY < 3) maxFatY = minFatY + 3;
+    if (minFatY < 0) minFatY = 0;
+
+    // 体脂肪率を体重の [minY, maxY] に正規化マッピング
+    for (int i = 0; i < records.length; i++) {
+      if (records[i].bodyFat != null) {
+        double f = records[i].bodyFat!;
+        double normY = (maxFatY == minFatY)
+            ? (minY + maxY) / 2
+            : minY + ((f - minFatY) / (maxFatY - minFatY)) * (maxY - minY);
+        fatSpots.add(FlSpot(i.toDouble(), normY));
+      }
+    }
+
+    double interval = ((maxY - minY) / 3).clamp(0.5, 10.0);
+
+    return LineChart(
+      LineChartData(
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: interval,
+          getDrawingHorizontalLine: (value) => FlLine(
+            color: Colors.black.withValues(alpha: 0.05),
+            strokeWidth: 1,
+            dashArray: [4, 4],
+          ),
+        ),
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipColor: (spot) => const Color(0xFF1E293B),
+            getTooltipItems: (touchedSpots) => touchedSpots.map((s) {
+              int idx = s.x.toInt();
+              String dateStr = (idx >= 0 && idx < records.length)
+                  ? DateFormat('M/d').format(records[idx].date)
+                  : '';
+              String info = dateStr;
+              if (idx >= 0 && idx < records.length) {
+                if (records[idx].weight != null) {
+                  info += '\n体重: ${records[idx].weight!.toStringAsFixed(1)} kg';
+                }
+                if (records[idx].bodyFat != null) {
+                  info += '\n体脂肪: ${records[idx].bodyFat!.toStringAsFixed(1)} %';
+                }
+              }
+              return LineTooltipItem(
+                info,
+                const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+              );
+            }).toList(),
+          ),
+        ),
+        titlesData: FlTitlesData(
+          // 左軸: 体重 (kg)
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 42,
+              interval: interval,
+              getTitlesWidget: (value, meta) {
+                if (value == meta.max || value == meta.min) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Text(
+                    value.toStringAsFixed(1),
+                    style: const TextStyle(fontSize: 10, color: Color(0xFF7C4DFF), fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.right,
+                  ),
+                );
+              },
+            ),
+          ),
+          // 右軸: 体脂肪率 (%)
+          rightTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 44,
+              interval: interval,
+              getTitlesWidget: (value, meta) {
+                if (value == meta.max || value == meta.min) return const SizedBox.shrink();
+                double origFat = (maxY == minY)
+                    ? minFatY
+                    : minFatY + ((value - minY) / (maxY - minY)) * (maxFatY - minFatY);
+                return Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: Text(
+                    '${origFat.toStringAsFixed(1)}%',
+                    style: TextStyle(fontSize: 10, color: Colors.orange.shade800, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.left,
+                  ),
+                );
+              },
+            ),
+          ),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: 1,
+              getTitlesWidget: (value, meta) {
+                int idx = value.toInt();
+                if (idx >= 0 && idx < records.length) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      DateFormat('M/d').format(records[idx].date),
+                      style: const TextStyle(fontSize: 10, color: Colors.black54),
+                    ),
+                  );
+                }
+                return const Text('');
+              },
+            ),
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        minX: -0.25,
+        maxX: records.length <= 1 ? 0.25 : (records.length - 1).toDouble() + 0.25,
+        minY: minY,
+        maxY: maxY,
+        lineBarsData: [
+          // 体重ライン
+          if (weightSpots.isNotEmpty)
+            LineChartBarData(
+              spots: weightSpots,
+              isCurved: weightSpots.length > 2,
+              curveSmoothness: 0.3,
+              color: const Color(0xFF7C4DFF),
+              barWidth: 3.5,
+              isStrokeCapRound: true,
+              dotData: FlDotData(
+                show: true,
+                getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                  radius: 4.5,
+                  color: Colors.white,
+                  strokeWidth: 2.5,
+                  strokeColor: const Color(0xFF7C4DFF),
+                ),
+              ),
+              belowBarData: BarAreaData(
+                show: true,
+                color: const Color(0xFF7C4DFF).withValues(alpha: 0.08),
+              ),
+            ),
+          // 体脂肪率ライン
+          if (fatSpots.isNotEmpty)
+            LineChartBarData(
+              spots: fatSpots,
+              isCurved: fatSpots.length > 2,
+              curveSmoothness: 0.3,
+              color: Colors.orange.shade800,
+              barWidth: 3.5,
+              isStrokeCapRound: true,
+              dotData: FlDotData(
+                show: true,
+                getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                  radius: 4.5,
+                  color: Colors.white,
+                  strokeWidth: 2.5,
+                  strokeColor: Colors.orange.shade800,
+                ),
+              ),
+              belowBarData: BarAreaData(
+                show: true,
+                color: Colors.orange.withValues(alpha: 0.08),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
