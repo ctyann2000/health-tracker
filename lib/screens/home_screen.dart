@@ -161,21 +161,50 @@ class _HomeScreenState extends State<HomeScreen> {
             sleepHours: result['sleepHours'] != null ? (result['sleepHours'] as num).toDouble() : null,
           );
           
-          if (record.conditionScore == null && record.symptoms.isEmpty && record.medications.isEmpty && record.workouts.isEmpty && record.weight == null && record.steps == null && record.bodyFat == null && record.bmi == null && record.bmr == null && record.calories == null && record.sleepHours == null) {
+          final removeSymptoms = List<String>.from(result['remove_symptoms'] ?? []);
+          final bool clearAllSymptoms = result['clear_all_symptoms'] == true;
+          final bool hasRemoval = removeSymptoms.isNotEmpty || clearAllSymptoms;
+
+          final bool hasNewData = record.conditionScore != null ||
+              record.symptoms.isNotEmpty ||
+              record.medications.isNotEmpty ||
+              record.workouts.isNotEmpty ||
+              record.weight != null ||
+              record.steps != null ||
+              record.bodyFat != null ||
+              record.bmi != null ||
+              record.bmr != null ||
+              record.calories != null ||
+              record.sleepHours != null ||
+              (result['prescription'] != null && result['prescription'] is Map);
+
+          if (!hasNewData && !hasRemoval) {
             setState(() {
               _messages.add({"text": "AI: 画像やテキストから、健康の記録を見つけることができませんでした。", "isUser": false});
             });
           } else {
-            Provider.of<HealthProvider>(context, listen: false).addRecord(record);
+            final healthProvider = Provider.of<HealthProvider>(context, listen: false);
+
+            // 1. 新規・追加データの反映
+            if (hasNewData) {
+              healthProvider.addRecord(record);
+            }
+
+            // 2. 症状の取り消し・否定の反映
+            if (clearAllSymptoms) {
+              healthProvider.clearSymptoms(targetDate);
+            } else if (removeSymptoms.isNotEmpty) {
+              healthProvider.removeSymptoms(targetDate, removeSymptoms);
+            }
             
-            // 処方箋・お薬手帳データがあれば処方レコードとして登録
+            // 3. 処方箋・お薬手帳データがあれば処方レコードとして登録
             if (result['prescription'] != null && result['prescription'] is Map) {
               try {
                 final presMap = Map<String, dynamic>.from(result['prescription']);
                 presMap['date'] = targetDate.toIso8601String();
                 final presRecord = PrescriptionRecord.fromJson(presMap);
                 if (presRecord.medications.isNotEmpty) {
-                  Provider.of<HealthProvider>(context, listen: false).addPrescription(presRecord);
+                  healthProvider.addPrescription(presRecord);
                 }
               } catch (e) {
                 debugPrint('Prescription parse error: $e');
@@ -192,10 +221,15 @@ class _HomeScreenState extends State<HomeScreen> {
               summaryLines.add("対象日: $dateStr");
             }
 
-            if (record.conditionScore != null) {
+            // 取り消された症状の明示
+            if (clearAllSymptoms) {
+              summaryLines.add("症状: すべて取り消し・解除");
+            } else if (removeSymptoms.isNotEmpty) {
+              summaryLines.add("取り消した症状: ${removeSymptoms.join(', ')}");
+            }
+
+            if (record.conditionScore != null && !hasRemoval) {
               summaryLines.add("体調スコア: ${record.conditionScore}/10");
-            } else {
-              summaryLines.add("体調スコア: -");
             }
             if (record.symptoms.isNotEmpty) {
               summaryLines.add("症状: ${record.symptoms.join(', ')}");
@@ -223,8 +257,11 @@ class _HomeScreenState extends State<HomeScreen> {
             if (record.calories != null) summaryLines.add("消費カロリー: ${record.calories}kcal");
 
             final summaryBlock = summaryLines.join('\n');
+            final titleHeader = hasRemoval && record.medications.isEmpty && record.workouts.isEmpty && record.weight == null
+                ? "【更新内容】"
+                : "【記録内容】";
             final fullMessage = coachReply.isNotEmpty
-                ? "$coachReply\n\n【記録内容】\n$summaryBlock"
+                ? (summaryBlock.isNotEmpty ? "$coachReply\n\n$titleHeader\n$summaryBlock" : coachReply)
                 : "記録を保存しました！\n$summaryBlock";
 
             setState(() {

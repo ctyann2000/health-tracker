@@ -87,6 +87,81 @@ class HealthProvider with ChangeNotifier {
     saveRecords();
   }
 
+  /// 特定の日付の記録から特定の症状を取り除く
+  void removeSymptoms(DateTime date, List<String> symptomsToRemove) {
+    final index = _records.indexWhere((r) =>
+        r.date.year == date.year &&
+        r.date.month == date.month &&
+        r.date.day == date.day);
+
+    if (index >= 0) {
+      final existing = _records[index];
+      final toRemoveNorm = symptomsToRemove.map((s) => s.trim().toLowerCase()).toSet();
+      final updatedSymptoms = existing.symptoms.where((s) {
+        final sNorm = s.trim().toLowerCase();
+        return !toRemoveNorm.any((target) => sNorm == target || sNorm.contains(target) || target.contains(sNorm));
+      }).toList();
+
+      // 症状が除去されて無くなった場合、誤判定で下げられていた体調スコアを正常値へ復帰
+      int? updatedScore = existing.conditionScore;
+      if (updatedSymptoms.isEmpty && updatedScore != null && updatedScore < 5) {
+        updatedScore = 7;
+      }
+
+      _records[index] = HealthRecord(
+        date: existing.date,
+        conditionScore: updatedScore,
+        symptoms: updatedSymptoms,
+        medications: existing.medications,
+        weight: existing.weight,
+        steps: existing.steps,
+        workouts: existing.workouts,
+        bodyFat: existing.bodyFat,
+        bmi: existing.bmi,
+        bmr: existing.bmr,
+        calories: existing.calories,
+        sleepHours: existing.sleepHours,
+      );
+
+      notifyListeners();
+      saveRecords();
+    }
+  }
+
+  /// 特定の日付の記録のすべての症状をクリアする
+  void clearSymptoms(DateTime date) {
+    final index = _records.indexWhere((r) =>
+        r.date.year == date.year &&
+        r.date.month == date.month &&
+        r.date.day == date.day);
+
+    if (index >= 0) {
+      final existing = _records[index];
+      int? updatedScore = existing.conditionScore;
+      if (updatedScore != null && updatedScore < 5) {
+        updatedScore = 7;
+      }
+
+      _records[index] = HealthRecord(
+        date: existing.date,
+        conditionScore: updatedScore,
+        symptoms: [],
+        medications: existing.medications,
+        weight: existing.weight,
+        steps: existing.steps,
+        workouts: existing.workouts,
+        bodyFat: existing.bodyFat,
+        bmi: existing.bmi,
+        bmr: existing.bmr,
+        calories: existing.calories,
+        sleepHours: existing.sleepHours,
+      );
+
+      notifyListeners();
+      saveRecords();
+    }
+  }
+
   void _mergeRecordInternal(HealthRecord record) {
     // 同じ日付の記録があれば上書きするか、単純に追加するか。
     final index = _records.indexWhere((r) => 
