@@ -11,6 +11,7 @@ import '../services/prescription_qr_service.dart';
 import '../services/gemini_service.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
+import '../utils/web_camera_cleaner.dart';
 
 /// 本格処方・お薬手帳画面
 class MedicationNotebookScreen extends StatefulWidget {
@@ -77,6 +78,13 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
             tooltip: '処方QRコードをスキャン',
             onPressed: () {
               _openQrScanner(context, healthProvider);
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.camera_alt, color: Color(0xFF00A86B)),
+            tooltip: '処方箋写真をAI解析',
+            onPressed: () {
+              _pickImageAndScanQr(context, healthProvider, source: ImageSource.camera);
             },
           ),
           IconButton(
@@ -1303,14 +1311,29 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
   PrescriptionRecord? _scannedRecord;
   bool _addToTodayMeds = true;
   Timer? _autoFinishTimer;
+  String _debugStatus = 'カメラ起動中...';
+  final List<String> _debugLogs = [];
+
+  void _addLog(String msg) {
+    final timeStr = DateFormat('HH:mm:ss').format(DateTime.now());
+    _debugLogs.insert(0, '[$timeStr] $msg');
+    if (_debugLogs.length > 8) {
+      _debugLogs.removeLast();
+    }
+    // コンソールにも出力
+    debugPrint('[QrScanner] $msg');
+  }
 
   @override
   void initState() {
     super.initState();
+    _addLog('スキャナー画面初期化');
     _startScanner();
   }
 
   void _startScanner() {
+    _debugStatus = 'カメラ準備完了・QR認識待機中';
+    _addLog('カメラ起動（モバイル/Web両対応）');
     _controller = MobileScannerController(
       formats: const [BarcodeFormat.qrCode],
       detectionSpeed: DetectionSpeed.normal,
@@ -1320,13 +1343,29 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
 
   Future<void> _stopScanner() async {
     _autoFinishTimer?.cancel();
-    if (_controller != null) {
+    final ctrl = _controller;
+    // 1. 即座にコントローラ参照をnullにしてUIツリーからMobileScannerをアンマウント
+    _controller = null;
+
+    // 2. Web環境においてDOM上の<video>要素 & WebRTCメディアストリームを先行物理停止
+    WebCameraCleaner.forceCleanup();
+    _addLog('カメラDOM物理停止を実行');
+
+    if (ctrl != null) {
       try {
-        await _controller!.stop();
+        // Webブラウザ環境で stop() が Future を完了させずハングするのを防止（150msタイムアウト保護）
+        await ctrl.stop().timeout(
+          const Duration(milliseconds: 150),
+          onTimeout: () => null,
+        );
       } catch (_) {}
-      _controller!.dispose();
-      _controller = null;
+      try {
+        ctrl.dispose();
+      } catch (_) {}
     }
+
+    // 3. 念押しで再度クリーンアップ
+    WebCameraCleaner.forceCleanup();
   }
 
   @override
@@ -1341,26 +1380,45 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
     if (_scannedQrs.isEmpty || _isParsing) return;
     _autoFinishTimer?.cancel();
 
+    _addLog('QR確定処理開始（検知: ${_scannedQrs.length}件）');
     setState(() {
       _isParsing = true;
+      _debugStatus = 'QRコード検知完了（${_scannedQrs.length}件）。カメラ停止中...';
     });
 
     // カメラストリームを完全停止・破棄し、Webのビデオ要素が画面に残るのを完全防止
     await _stopScanner();
+    if (mounted) {
+      setState(() {
+        _debugStatus = '処方データを解析・展開中...';
+      });
+    }
 
     final combined = _scannedQrs.join('\n');
     try {
-      final record = await _qrService.parsePrescriptionText(combined);
+      _addLog('処方テキスト解析開始 (${combined.length}文字)');
+      // 4秒タイムアウト保護：AIや正規表現が遅い場合も確実にローカルパーサーで展開して進行
+      final record = await _qrService.parsePrescriptionText(combined).timeout(
+        const Duration(seconds: 4),
+        onTimeout: () {
+          _addLog('タイムアウト検知：内蔵パーサーで即時フォールバック');
+          return PrescriptionQrService.parseLocalJahisOrText(combined);
+        },
+      );
       if (mounted) {
         setState(() {
           _isParsing = false;
           _scannedRecord = record;
+          _debugStatus = '処方解析完了（薬品数: ${record.medications.length}件）';
         });
+        _addLog('解析成功: ${record.hospitalName} / 薬品${record.medications.length}件');
       }
     } catch (e) {
       if (mounted) {
+        _addLog('解析エラー: $e');
         setState(() {
           _isParsing = false;
+          _debugStatus = '解析失敗: $e';
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('解析に失敗しました: $e'), backgroundColor: Colors.redAccent),
@@ -1372,7 +1430,11 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
 
   /// 写真撮影またはアルバム選択からの処方解析
   Future<void> _pickImageAndParse(ImageSource source) async {
+    _addLog('画像選択開始（ソース: ${source == ImageSource.camera ? "カメラ撮影" : "アルバム"}）');
     await _stopScanner();
+    if (mounted) {
+      setState(() {});
+    }
 
     final picker = ImagePicker();
     final XFile? image = await picker.pickImage(
@@ -1383,26 +1445,33 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
     );
 
     if (image == null) {
+      _addLog('画像選択がキャンセルされました');
       _restartScanning();
       return;
     }
 
     if (!mounted) return;
 
+    _addLog('画像取得完了。処方解析中...');
     setState(() {
       _isParsing = true;
+      _debugStatus = '写真から処方箋・QRコードをAI解析中...';
     });
 
     try {
       // 1. 静止画からQRコードの抽出を試みる
+      _addLog('画像内のQRコードを走査中...');
       String? qrText = await _qrService.scanQrFromImagePath(image.path);
       if (qrText != null && qrText.trim().isNotEmpty) {
+        _addLog('画像内QRコード検出成功 (${qrText.length}文字)');
         final record = await _qrService.parsePrescriptionText(qrText);
         if (mounted) {
           setState(() {
             _isParsing = false;
             _scannedRecord = record;
+            _debugStatus = '処方解析完了（薬品数: ${record.medications.length}件）';
           });
+          _addLog('処方解析完了: ${record.hospitalName}');
           return;
         }
       }
@@ -1533,7 +1602,14 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
         ),
         leading: IconButton(
           icon: const Icon(Icons.close, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
+          tooltip: '閉じる',
+          onPressed: () async {
+            _addLog('ユーザーが閉じるをタップ');
+            await _stopScanner();
+            if (context.mounted) {
+              Navigator.pop(context);
+            }
+          },
         ),
         actions: [
           if (_scannedRecord == null && _controller != null) ...[
@@ -1560,25 +1636,61 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
       return _buildResultView(context, _scannedRecord!);
     }
 
-    // 2. 解析中ローディング表示
+    // 2. 解析中ローディング表示（DOMビデオ完全除去済みの安全画面）
     if (_isParsing) {
       return Container(
         color: const Color(0xFF0F172A),
-        child: const Center(
-          child: Card(
-            color: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(16))),
-            child: Padding(
-              padding: EdgeInsets.all(32.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(color: Color(0xFF00A86B)),
-                  SizedBox(height: 20),
-                  Text('処方内容を展開中...', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  SizedBox(height: 8),
-                  Text('薬品名・用法用量を整理しています', style: TextStyle(fontSize: 12, color: Colors.black54)),
-                ],
+        width: double.infinity,
+        height: double.infinity,
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0),
+            child: Card(
+              color: Colors.white,
+              elevation: 8,
+              shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(20))),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 28.0, vertical: 32.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF00A86B),
+                        strokeWidth: 3.5,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      '処方内容を展開中...',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFF0F172A)),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _debugStatus,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                    const SizedBox(height: 24),
+                    // 万が一進行しない場合のフォールバック安全ボタン
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF0F172A),
+                        side: const BorderSide(color: Colors.black26),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.refresh, size: 16),
+                      label: const Text('戻って撮影や手動入力に切替', style: TextStyle(fontSize: 12)),
+                      onPressed: () {
+                        _addLog('ローディングから手動復帰');
+                        _restartScanning();
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1593,9 +1705,10 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // カメラプレビュー
-        if (_controller != null)
+        // カメラプレビュー（_controller が存在し、かつ非パース時のみビルド）
+        if (_controller != null && !_isParsing && _scannedRecord == null)
           MobileScanner(
+            key: const ValueKey('active_scanner'),
             controller: _controller!,
             onDetect: (BarcodeCapture capture) {
               if (_isParsing || _scannedRecord != null) return;
@@ -1603,13 +1716,17 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
               for (final barcode in capture.barcodes) {
                 final raw = barcode.rawValue;
                 if (raw != null && raw.trim().isNotEmpty) {
-                  if (!_scannedQrs.contains(raw.trim())) {
-                    _scannedQrs.add(raw.trim());
+                  final trimmed = raw.trim();
+                  if (!_scannedQrs.contains(trimmed)) {
+                    _scannedQrs.add(trimmed);
                     hasNew = true;
+                    final preview = trimmed.length > 25 ? '${trimmed.substring(0, 25)}...' : trimmed;
+                    _addLog('QR検知[#${_scannedQrs.length}]: $preview');
                   }
                 }
               }
               if (hasNew) {
+                _debugStatus = 'QRコード検知: ${_scannedQrs.length}件（1秒後に自動解析）';
                 setState(() {});
                 // 1個検知されたらタイマーをリセットし1秒後に自動完了
                 _autoFinishTimer?.cancel();
@@ -1621,6 +1738,7 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
               }
             },
             errorBuilder: (context, error) {
+              _addLog('カメラエラー: ${error.errorDetails?.message ?? error.toString()}');
               return Center(
                 child: Padding(
                   padding: const EdgeInsets.all(24.0),
@@ -1663,7 +1781,7 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.8),
+              color: Colors.black.withOpacity(0.85),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: _scannedQrs.isNotEmpty ? const Color(0xFF00E676) : const Color(0xFF00A86B),
@@ -1700,6 +1818,58 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
                   style: const TextStyle(color: Colors.white70, fontSize: 11),
                   textAlign: TextAlign.center,
                 ),
+                const SizedBox(height: 8),
+                // リアルタイムステータスバッジ
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _scannedQrs.isNotEmpty ? const Color(0xFF00E676) : Colors.amberAccent,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          _debugStatus,
+                          style: const TextStyle(color: Colors.white, fontSize: 11),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_debugLogs.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: _debugLogs.take(3).map((log) {
+                        return Text(
+                          log,
+                          style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'monospace'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

@@ -31,6 +31,76 @@
 
   <title>HealthApp</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- キャッシュ無効化（常に最新のビルドを取得） -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+
+  <script>
+    // 1. Service Worker の新規登録を完全抑止（No-op / 即座に reject）
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register = function() {
+        console.log('[SW] ServiceWorker registration blocked by application');
+        return Promise.reject(new Error('ServiceWorker registration disabled'));
+      };
+      // 既存のすべての ServiceWorker を強制登録解除
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for (var i = 0; i < registrations.length; i++) {
+          registrations[i].unregister().then(function(success) {
+            console.log('[SW] Unregistered existing ServiceWorker:', success);
+          });
+        }
+      });
+    }
+
+    // 2. ブラウザの CacheStorage を全て物理消去
+    if ('caches' in window) {
+      caches.keys().then(function(names) {
+        for (var i = 0; i < names.length; i++) {
+          caches.delete(names[i]);
+          console.log('[Cache] Deleted cache:', names[i]);
+        }
+      });
+    }
+
+    // 3. Webカメラストリームの物理的強制停止 ＆ DOM video要素の完全消去関数
+    window.forceStopAllCamerasAndRemoveVideos = function() {
+      try {
+        console.log('[CameraCleanup] Force stopping all camera tracks & removing video DOMs');
+        var videos = document.querySelectorAll('video');
+        videos.forEach(function(v) {
+          try {
+            if (v.srcObject && v.srcObject.getTracks) {
+              v.srcObject.getTracks().forEach(function(t) {
+                try { t.stop(); } catch (_) {}
+              });
+            }
+            v.pause();
+            v.srcObject = null;
+            v.load();
+          } catch (_) {}
+          try {
+            if (v.parentNode) {
+              v.parentNode.removeChild(v);
+            }
+          } catch (_) {}
+        });
+
+        // flt-platform-view 残留の消去
+        var pvs = document.querySelectorAll('flt-platform-view');
+        pvs.forEach(function(pv) {
+          try {
+            if (pv.parentNode) {
+              pv.parentNode.removeChild(pv);
+            }
+          } catch (_) {}
+        });
+      } catch (err) {
+        console.error('[CameraCleanup] Error in force cleanup:', err);
+      }
+    };
+  </script>
 </head>
 <body>
   <!--
@@ -41,6 +111,12 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    // キャッシュバスターを付与して常に最新の flutter_bootstrap.js を実行
+    var script = document.createElement('script');
+    script.src = 'flutter_bootstrap.js?v=' + new Date().getTime();
+    script.async = true;
+    document.body.appendChild(script);
+  </script>
 </body>
 </html>
