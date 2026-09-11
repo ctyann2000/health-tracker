@@ -11,17 +11,21 @@ class PrescriptionQrService {
   PrescriptionQrService({GeminiService? geminiService})
       : _geminiService = geminiService ?? GeminiService();
 
-  /// 静止画ファイルパスからQRコードを読み取り、生テキストを抽出する
+  /// 静止画ファイルパスからQRコードを読み取り、生テキストを抽出する（複数・分割QRコードに対応）
   Future<String?> scanQrFromImagePath(String imagePath) async {
     final controller = MobileScannerController();
     try {
       final BarcodeCapture? capture = await controller.analyzeImage(imagePath);
       if (capture != null && capture.barcodes.isNotEmpty) {
+        final values = <String>[];
         for (final barcode in capture.barcodes) {
           final val = barcode.rawValue;
-          if (val != null && val.trim().isNotEmpty) {
-            return val.trim();
+          if (val != null && val.trim().isNotEmpty && !values.contains(val.trim())) {
+            values.add(val.trim());
           }
+        }
+        if (values.isNotEmpty) {
+          return values.join('\n');
         }
       }
       return null;

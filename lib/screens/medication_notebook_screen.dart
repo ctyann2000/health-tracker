@@ -7,6 +7,7 @@ import '../providers/health_provider.dart';
 import '../models/prescription_record.dart';
 import '../models/health_record.dart';
 import '../services/prescription_qr_service.dart';
+import '../services/gemini_service.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -150,39 +151,41 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
           ),
         ],
       ),
-      floatingActionButton: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FloatingActionButton.extended(
-            heroTag: 'fab_manual_prescription',
-            backgroundColor: Colors.white,
-            foregroundColor: const Color(0xFF1E293B),
-            elevation: 3,
-            icon: const Icon(Icons.edit_note, color: Color(0xFF00A86B), size: 20),
-            label: const Text(
-              '手入力',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 10, right: 2),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            // 手動追加マーク (+)
+            FloatingActionButton(
+              heroTag: 'fab_manual_prescription',
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF00A86B),
+              elevation: 5,
+              shape: const CircleBorder(),
+              tooltip: '処方箋を手動追加',
+              onPressed: () {
+                _showAddPrescriptionDialog(context, healthProvider);
+              },
+              child: const Icon(Icons.add, size: 28),
             ),
-            onPressed: () {
-              _showAddPrescriptionDialog(context, healthProvider);
-            },
-          ),
-          const SizedBox(width: 10),
-          FloatingActionButton.extended(
-            heroTag: 'fab_qr_prescription',
-            backgroundColor: const Color(0xFF00A86B),
-            foregroundColor: Colors.white,
-            elevation: 4,
-            icon: const Icon(Icons.qr_code_scanner, size: 20),
-            label: const Text(
-              '処方QR読取',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            const SizedBox(height: 12),
+            // QRコードマーク
+            FloatingActionButton(
+              heroTag: 'fab_qr_prescription',
+              backgroundColor: const Color(0xFF00A86B),
+              foregroundColor: Colors.white,
+              elevation: 6,
+              shape: const CircleBorder(),
+              tooltip: '処方QRコードをスキャン',
+              onPressed: () {
+                _openQrScanner(context, healthProvider);
+              },
+              child: const Icon(Icons.qr_code_scanner, size: 28),
             ),
-            onPressed: () {
-              _openQrScanner(context, healthProvider);
-            },
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -806,39 +809,39 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
     );
   }
 
-  /// 処方QRコードスキャナーモーダルを開く
+  /// 処方QRコードスキャナー（全画面）を開く
   void _openQrScanner(BuildContext context, HealthProvider healthProvider) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (modalCtx) => Container(
-        height: MediaQuery.of(context).size.height * 0.85,
-        decoration: const BoxDecoration(
-          color: Color(0xFF1E293B),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          child: _QrScannerView(
-            onQrCodeScanned: (qrText) {
-              Navigator.pop(modalCtx);
-              _processQrText(context, healthProvider, qrText);
-            },
-            onPickImage: () {
-              Navigator.pop(modalCtx);
-              _pickImageAndScanQr(context, healthProvider);
-            },
-          ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (scannerCtx) => _QrScannerScreen(
+          onQrCodesReady: (qrText) {
+            _processQrText(context, healthProvider, qrText);
+          },
+          onCapturePhoto: () {
+            _pickImageAndScanQr(context, healthProvider, source: ImageSource.camera);
+          },
+          onPickGallery: () {
+            _pickImageAndScanQr(context, healthProvider, source: ImageSource.gallery);
+          },
         ),
       ),
     );
   }
 
-  /// 端末のアルバム・画像ファイルからQRコードを選択して読み取る
-  Future<void> _pickImageAndScanQr(BuildContext context, HealthProvider healthProvider) async {
+  /// 端末のカメラ撮影またはアルバムから画像を選択して処方QR・処方箋を解析
+  Future<void> _pickImageAndScanQr(
+    BuildContext context,
+    HealthProvider healthProvider, {
+    ImageSource source = ImageSource.camera,
+  }) async {
     final picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    final XFile? image = await picker.pickImage(
+      source: source,
+      maxWidth: 2400,
+      maxHeight: 2400,
+      imageQuality: 90,
+    );
     if (image == null) return;
 
     if (!context.mounted) return;
@@ -855,7 +858,9 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
               children: [
                 CircularProgressIndicator(color: Color(0xFF00A86B)),
                 SizedBox(height: 16),
-                Text('写真内のQRコードを解析中...', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text('処方写真・QRコードをAI解析中...', style: TextStyle(fontWeight: FontWeight.bold)),
+                SizedBox(height: 6),
+                Text('処方箋の薬品・用法・病院名を整理しています', style: TextStyle(fontSize: 11, color: Colors.black54)),
               ],
             ),
           ),
@@ -863,21 +868,80 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
       ),
     );
 
-    final qrText = await _qrService.scanQrFromImagePath(image.path);
+    // 1. 写真からQRコード（複数・分割QRコード対応）を抽出
+    String? qrText = await _qrService.scanQrFromImagePath(image.path);
 
-    if (context.mounted) {
-      Navigator.pop(context); // ローディングを閉じる
-    }
-
+    // 2. QRコードが生テキストで取得できた場合はそれをパース
     if (qrText != null && qrText.trim().isNotEmpty) {
       if (context.mounted) {
+        Navigator.pop(context); // ローディングを閉じる
         _processQrText(context, healthProvider, qrText);
       }
-    } else {
+      return;
+    }
+
+    // 3. QRコードが直接デコードできなかった場合、写真そのものをGemini画像認識に送信して文字認識
+    try {
+      final bytes = await image.readAsBytes();
+      final geminiService = GeminiService();
+      final result = await geminiService.extractHealthDataFromImage(
+        bytes,
+        image.mimeType ?? 'image/jpeg',
+        extraInput: '処方箋・お薬手帳のQRコード写真です。処方薬、用法用量、病院名、薬局名、効能・副作用を確実に抽出してprescriptionに格納してください。',
+      );
+
+      if (context.mounted) {
+        Navigator.pop(context); // ローディングを閉じる
+      }
+
+      if (result['prescription'] != null && result['prescription'] is Map) {
+        final presMap = Map<String, dynamic>.from(result['prescription']);
+        final record = PrescriptionRecord.fromJson(presMap);
+        if (context.mounted && record.medications.isNotEmpty) {
+          _showParsedPrescriptionConfirmDialog(context, healthProvider, record);
+          return;
+        }
+      }
+
+      // もしprescriptionが取れなくてもmedicationsが取れていればPrescriptionRecordに変換
+      final medsList = (result['medications'] as List?) ?? [];
+      if (medsList.isNotEmpty) {
+        final meds = medsList.map((m) {
+          if (m is Map) {
+            return PrescriptionMedication(
+              name: m['name'] ?? '処方薬',
+              dosage: m['dosage'] ?? '指示通り服用',
+              category: '内服',
+            );
+          }
+          return PrescriptionMedication(name: m.toString(), dosage: '指示通り服用');
+        }).toList();
+        final record = PrescriptionRecord(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          date: DateTime.now(),
+          hospitalName: '処方医療機関',
+          medications: meds,
+        );
+        if (context.mounted) {
+          _showParsedPrescriptionConfirmDialog(context, healthProvider, record);
+          return;
+        }
+      }
+
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('写真内に処方QRコードが検出されませんでした。別の写真をお試しいただくか、カメラで直接スキャンしてください。'),
+            content: Text('写真から処方情報を検出できませんでした。処方QRコードまたは処方箋の文字がはっきり写るように撮影してください。'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('処方写真の解析に失敗しました: $e'),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -1191,23 +1255,26 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
   }
 }
 
-/// リアルタイムQRスキャナーウィジェット
-class _QrScannerView extends StatefulWidget {
-  final Function(String qrText) onQrCodeScanned;
-  final VoidCallback onPickImage;
+/// 処方QRコード・処方箋スキャナー全画面ウィジェット
+class _QrScannerScreen extends StatefulWidget {
+  final Function(String qrText) onQrCodesReady;
+  final VoidCallback onCapturePhoto;
+  final VoidCallback onPickGallery;
 
-  const _QrScannerView({
-    required this.onQrCodeScanned,
-    required this.onPickImage,
+  const _QrScannerScreen({
+    required this.onQrCodesReady,
+    required this.onCapturePhoto,
+    required this.onPickGallery,
   });
 
   @override
-  State<_QrScannerView> createState() => _QrScannerViewState();
+  State<_QrScannerScreen> createState() => _QrScannerScreenState();
 }
 
-class _QrScannerViewState extends State<_QrScannerView> {
+class _QrScannerScreenState extends State<_QrScannerScreen> {
   late final MobileScannerController _controller;
-  bool _isDetected = false;
+  final Set<String> _scannedQrs = {};
+  bool _isFinished = false;
 
   @override
   void initState() {
@@ -1224,15 +1291,27 @@ class _QrScannerViewState extends State<_QrScannerView> {
     super.dispose();
   }
 
+  void _finishScanning() {
+    if (_isFinished || _scannedQrs.isEmpty) return;
+    _isFinished = true;
+    final combined = _scannedQrs.join('\n');
+    Navigator.pop(context);
+    widget.onQrCodesReady(combined);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    final targetWidth = (screenSize.width * 0.88).clamp(260.0, 380.0);
+    final targetHeight = (screenSize.width * 0.55).clamp(160.0, 240.0); // 処方箋QR（横並び複数）に合わせた横長枠
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
         elevation: 0,
         title: const Text(
-          '処方QRコードスキャン',
+          '処方QRコード読取',
           style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
         ),
         leading: IconButton(
@@ -1253,21 +1332,31 @@ class _QrScannerViewState extends State<_QrScannerView> {
         ],
       ),
       body: Stack(
+        fit: StackFit.expand,
         children: [
-          // カメラプレビュー
+          // 全画面カメラプレビュー
           MobileScanner(
             controller: _controller,
             onDetect: (BarcodeCapture capture) {
-              if (_isDetected) return;
+              if (_isFinished) return;
+              bool hasNew = false;
               for (final barcode in capture.barcodes) {
-                final rawValue = barcode.rawValue;
-                if (rawValue != null && rawValue.trim().isNotEmpty) {
-                  setState(() {
-                    _isDetected = true;
-                  });
-                  widget.onQrCodeScanned(rawValue.trim());
-                  break;
+                final raw = barcode.rawValue;
+                if (raw != null && raw.trim().isNotEmpty) {
+                  if (!_scannedQrs.contains(raw.trim())) {
+                    _scannedQrs.add(raw.trim());
+                    hasNew = true;
+                  }
                 }
+              }
+              if (hasNew) {
+                setState(() {});
+                // 1個以上検知されたら1.5秒後に自動で解析へ進む
+                Future.delayed(const Duration(milliseconds: 1500), () {
+                  if (mounted && !_isFinished && _scannedQrs.isNotEmpty) {
+                    _finishScanning();
+                  }
+                });
               }
             },
             errorBuilder: (context, error) {
@@ -1277,10 +1366,10 @@ class _QrScannerViewState extends State<_QrScannerView> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.videocam_off, size: 48, color: Colors.white54),
+                      const Icon(Icons.videocam_off, size: 56, color: Colors.white54),
                       const SizedBox(height: 16),
                       Text(
-                        'カメラを起動できませんでした\n${error.errorDetails?.message ?? error.toString()}',
+                        'リアルタイムカメラがご利用いただけません\n${error.errorDetails?.message ?? error.toString()}',
                         textAlign: TextAlign.center,
                         style: const TextStyle(color: Colors.white70, fontSize: 13),
                       ),
@@ -1289,10 +1378,15 @@ class _QrScannerViewState extends State<_QrScannerView> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF00A86B),
                           foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
-                        icon: const Icon(Icons.photo_library),
-                        label: const Text('写真・画像から読み取る'),
-                        onPressed: widget.onPickImage,
+                        icon: const Icon(Icons.camera_alt),
+                        label: const Text('カメラで撮影して解析', style: TextStyle(fontWeight: FontWeight.bold)),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          widget.onCapturePhoto();
+                        },
                       ),
                     ],
                   ),
@@ -1301,57 +1395,158 @@ class _QrScannerViewState extends State<_QrScannerView> {
             },
           ),
 
-          // スキャンターゲットフレーム
-          Center(
+          // 上部ガイドバー
+          Positioned(
+            top: 16,
+            left: 16,
+            right: 16,
             child: Container(
-              width: 250,
-              height: 250,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFF00A86B), width: 2.5),
-                borderRadius: BorderRadius.circular(16),
-                color: Colors.transparent,
+                color: Colors.black.withOpacity(0.65),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withOpacity(0.15)),
               ),
-              child: Stack(
+              child: Column(
                 children: [
-                  // ガイドラインテキスト
-                  const Align(
-                    alignment: Alignment.center,
-                    child: Text(
-                      'QRコードを\n枠内に合わせてください',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                        shadows: [Shadow(color: Colors.black, blurRadius: 4)],
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.qr_code, color: Color(0xFF00A86B), size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        '処方箋のQRコードを枠に合わせてください',
+                        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  if (_scannedQrs.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF00A86B),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '✓ ${_scannedQrs.length}個のQRコードを検知中',
+                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
           ),
 
-          // 下部ツールバー
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 24,
-            child: Center(
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white.withOpacity(0.9),
-                  foregroundColor: const Color(0xFF1E293B),
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                  elevation: 4,
+          // スキャンターゲットフレーム（処方箋の複数横並びQRコードに最適化した横長）
+          Center(
+            child: Container(
+              width: targetWidth,
+              height: targetHeight,
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: _scannedQrs.isNotEmpty ? const Color(0xFF00E676) : const Color(0xFF00A86B),
+                  width: 2.5,
                 ),
-                icon: const Icon(Icons.photo_library, color: Color(0xFF00A86B)),
-                label: const Text(
-                  'アルバムの写真・スクショから選択',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                ),
-                onPressed: widget.onPickImage,
+                borderRadius: BorderRadius.circular(18),
+                color: Colors.transparent,
               ),
+              child: Stack(
+                children: [
+                  if (_scannedQrs.isEmpty)
+                    const Align(
+                      alignment: Alignment.center,
+                      child: Text(
+                        '複数あるQRコード（1〜3個）を\n枠内に収めてください',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          shadows: [Shadow(color: Colors.black, blurRadius: 4)],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+
+          // 下部操作パネル
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 30,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_scannedQrs.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00A86B),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                        elevation: 6,
+                      ),
+                      icon: const Icon(Icons.check_circle, size: 20),
+                      label: Text(
+                        '検知したデータで登録に進む (${_scannedQrs.length}件)',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      onPressed: _finishScanning,
+                    ),
+                  ),
+
+                // 写真撮影＆アルバム選択の2つの選択肢
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: const Color(0xFF1E293B),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          elevation: 4,
+                        ),
+                        icon: const Icon(Icons.camera_alt, color: Color(0xFF00A86B), size: 18),
+                        label: const Text(
+                          '写真撮影で一発解析',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          widget.onCapturePhoto();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white.withOpacity(0.9),
+                          foregroundColor: const Color(0xFF1E293B),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          elevation: 4,
+                        ),
+                        icon: const Icon(Icons.photo_library, color: Colors.blueAccent, size: 18),
+                        label: const Text(
+                          'アルバムから選択',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          widget.onPickGallery();
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
