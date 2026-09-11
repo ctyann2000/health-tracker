@@ -101,46 +101,101 @@
       }
     };
 
-    // 4. ブラウザネイティブの BarcodeDetector を使った静止画バイト配列からのQRコード検出
+    // jsQR CDNライブラリまたはネイティブBarcodeDetectorの統合
+    // 4. 静止画バイト配列からのQRコード二重検出（BarcodeDetector ＋ jsQRフォールバック）
     window.detectQrFromBytes = async function(uint8Array) {
-      if (!('BarcodeDetector' in window)) {
-        console.log('[QR] BarcodeDetector not available in this browser');
-        return [];
-      }
-      try {
-        var detector = new BarcodeDetector({ formats: ['qr_code'] });
-        var blob = new Blob([uint8Array]);
-        var imgBitmap = await createImageBitmap(blob);
-        var barcodes = await detector.detect(imgBitmap);
-        var results = [];
-        for (var i = 0; i < barcodes.length; i++) {
-          if (barcodes[i].rawValue) {
-            results.push(barcodes[i].rawValue);
+      var results = [];
+      var blob = new Blob([uint8Array], { type: 'image/jpeg' });
+
+      // 手法A: Chromeネイティブ BarcodeDetector（超高速）
+      if ('BarcodeDetector' in window) {
+        try {
+          var detector = new BarcodeDetector({ formats: ['qr_code'] });
+          var imgBitmap = await createImageBitmap(blob);
+          var barcodes = await detector.detect(imgBitmap);
+          for (var i = 0; i < barcodes.length; i++) {
+            if (barcodes[i].rawValue && results.indexOf(barcodes[i].rawValue) === -1) {
+              results.push(barcodes[i].rawValue);
+            }
           }
+          if (results.length > 0) {
+            console.log('[QR] Native BarcodeDetector succeeded:', results.length);
+            return results;
+          }
+        } catch (errNative) {
+          console.warn('[QR] Native BarcodeDetector error, falling back to jsQR:', errNative);
         }
-        console.log('[QR] Detected barcodes from bytes:', results.length);
-        return results;
-      } catch (e) {
-        console.warn('[QR] Error detecting QR from bytes:', e);
-        return [];
       }
+
+      // 手法B: jsQR（高精度キャンバス解析フォールバック）
+      if (typeof jsQR !== 'undefined') {
+        try {
+          var imgBitmap = await createImageBitmap(blob);
+          var canvas = document.createElement('canvas');
+          var ctx = canvas.getContext('2d', { willReadFrequently: true });
+          
+          // 解像度調整（大きすぎるとjsQRが遅いので最大1600pxにスケール）
+          var maxDim = 1600;
+          var w = imgBitmap.width;
+          var h = imgBitmap.height;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) {
+              h = Math.round((h * maxDim) / w);
+              w = maxDim;
+            } else {
+              w = Math.round((w * maxDim) / h);
+              h = maxDim;
+            }
+          }
+          canvas.width = w;
+          canvas.height = h;
+          ctx.drawImage(imgBitmap, 0, 0, w, h);
+          
+          var imgData = ctx.getImageData(0, 0, w, h);
+          var code = jsQR(imgData.data, imgData.width, imgData.height, {
+            inversionAttempts: "dontInvert",
+          });
+          if (code && code.data) {
+            results.push(code.data);
+            console.log('[QR] jsQR succeeded:', code.data.substring(0, 30));
+          } else {
+            // 反転（白黒反転）でも試行
+            var codeInvert = jsQR(imgData.data, imgData.width, imgData.height, {
+              inversionAttempts: "onlyInvert",
+            });
+            if (codeInvert && codeInvert.data) {
+              results.push(codeInvert.data);
+              console.log('[QR] jsQR (inverted) succeeded:', codeInvert.data.substring(0, 30));
+            }
+          }
+        } catch (errJsQr) {
+          console.warn('[QR] jsQR error:', errJsQr);
+        }
+      }
+
+      console.log('[QR] Total detected QRs:', results.length);
+      return results;
     };
   </script>
+  <!-- jsQR 軽量QRコード解析ライブラリ -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
-
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
   <script>
-    // キャッシュバスターを付与して常に最新の flutter_bootstrap.js を実行
+    // キャッシュバスターを付与して常に最新の flutter_bootstrap.js および main.dart.js をロード
+    var cacheKey = new Date().getTime();
+    
+    // flutter_bootstrap.js 内の _flutter.loader.load をインターセプトして main.dart.js にキャッシュバスターを強制付与
+    window._flutter = window._flutter || {};
+    var originalBuildCallback = null;
+    
+    // スクリプトタグを生成してロード
     var script = document.createElement('script');
-    script.src = 'flutter_bootstrap.js?v=' + new Date().getTime();
+    script.src = 'flutter_bootstrap.js?v=' + cacheKey;
     script.async = true;
+    script.onload = function() {
+      console.log('[Bootstrap] flutter_bootstrap.js loaded with cachebuster:', cacheKey);
+    };
     document.body.appendChild(script);
   </script>
 </body>
