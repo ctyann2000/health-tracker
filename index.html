@@ -100,6 +100,31 @@
         console.error('[CameraCleanup] Error in force cleanup:', err);
       }
     };
+
+    // 4. ブラウザネイティブの BarcodeDetector を使った静止画バイト配列からのQRコード検出
+    window.detectQrFromBytes = async function(uint8Array) {
+      if (!('BarcodeDetector' in window)) {
+        console.log('[QR] BarcodeDetector not available in this browser');
+        return [];
+      }
+      try {
+        var detector = new BarcodeDetector({ formats: ['qr_code'] });
+        var blob = new Blob([uint8Array]);
+        var imgBitmap = await createImageBitmap(blob);
+        var barcodes = await detector.detect(imgBitmap);
+        var results = [];
+        for (var i = 0; i < barcodes.length; i++) {
+          if (barcodes[i].rawValue) {
+            results.push(barcodes[i].rawValue);
+          }
+        }
+        console.log('[QR] Detected barcodes from bytes:', results.length);
+        return results;
+      } catch (e) {
+        console.warn('[QR] Error detecting QR from bytes:', e);
+        return [];
+      }
+    };
   </script>
 </head>
 <body>
