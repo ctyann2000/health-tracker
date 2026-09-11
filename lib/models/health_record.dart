@@ -1,4 +1,3 @@
-import 'dart:convert';
 
 class Workout {
   final String name;

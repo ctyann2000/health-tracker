@@ -5,6 +5,7 @@ import '../models/prescription_record.dart';
 import 'gemini_service.dart';
 
 import '../utils/web_qr_detector.dart';
+import '../utils/medication_efficacy_helper.dart';
 
 /// 処方箋・お薬手帳のQRコード解析を行うサービス
 class PrescriptionQrService {
@@ -180,6 +181,7 @@ class PrescriptionQrService {
               name: currentMedName,
               dosage: currentMedDosage.isNotEmpty ? currentMedDosage : '指示通り服用',
               category: currentCategory,
+              efficacy: MedicationEfficacyHelper.getEfficacy(currentMedName),
             ));
             currentMedName = '';
             currentMedDosage = '';
@@ -215,6 +217,7 @@ class PrescriptionQrService {
             medications.add(PrescriptionMedication(
               name: possibleName,
               dosage: possibleDosage,
+              efficacy: MedicationEfficacyHelper.getEfficacy(possibleName),
             ));
           }
         }
@@ -227,6 +230,7 @@ class PrescriptionQrService {
         name: currentMedName,
         dosage: currentMedDosage.isNotEmpty ? currentMedDosage : '指示通り服用',
         category: currentCategory,
+        efficacy: MedicationEfficacyHelper.getEfficacy(currentMedName),
       ));
     }
 

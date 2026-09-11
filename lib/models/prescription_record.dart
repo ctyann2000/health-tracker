@@ -1,4 +1,3 @@
-import 'dart:convert';
 
 /// 処方された各薬品の詳細情報
 class PrescriptionMedication {
@@ -42,6 +41,26 @@ class PrescriptionMedication {
       'precautions': precautions,
       'imageUrl': imageUrl,
     };
+  }
+
+  PrescriptionMedication copyWith({
+    String? name,
+    String? dosage,
+    String? category,
+    String? efficacy,
+    String? sideEffects,
+    String? precautions,
+    String? imageUrl,
+  }) {
+    return PrescriptionMedication(
+      name: name ?? this.name,
+      dosage: dosage ?? this.dosage,
+      category: category ?? this.category,
+      efficacy: efficacy ?? this.efficacy,
+      sideEffects: sideEffects ?? this.sideEffects,
+      precautions: precautions ?? this.precautions,
+      imageUrl: imageUrl ?? this.imageUrl,
+    );
   }
 }
 
@@ -129,5 +148,31 @@ class PrescriptionRecord {
       'medications': medications.map((m) => m.toJson()).toList(),
       'notes': notes,
     };
+  }
+
+  PrescriptionRecord copyWith({
+    String? id,
+    DateTime? date,
+    String? hospitalName,
+    String? department,
+    String? doctorName,
+    String? pharmacyName,
+    String? pharmacistName,
+    int? cost,
+    List<PrescriptionMedication>? medications,
+    String? notes,
+  }) {
+    return PrescriptionRecord(
+      id: id ?? this.id,
+      date: date ?? this.date,
+      hospitalName: hospitalName ?? this.hospitalName,
+      department: department ?? this.department,
+      doctorName: doctorName ?? this.doctorName,
+      pharmacyName: pharmacyName ?? this.pharmacyName,
+      pharmacistName: pharmacistName ?? this.pharmacistName,
+      cost: cost ?? this.cost,
+      medications: medications ?? this.medications,
+      notes: notes ?? this.notes,
+    );
   }
 }

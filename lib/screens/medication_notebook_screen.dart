@@ -12,6 +12,7 @@ import '../services/gemini_service.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/debug_log_service.dart';
+import '../utils/medication_efficacy_helper.dart';
 
 /// 本格処方・お薬手帳画面
 class MedicationNotebookScreen extends StatefulWidget {
@@ -474,19 +475,49 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
                       height: 1.3,
                     ),
                   ),
-                  if (med.efficacy != null && med.efficacy!.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      '効用: ',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFF0284C7),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
+                  Builder(
+                    builder: (context) {
+                      final eff = MedicationEfficacyHelper.getEfficacy(med.name, med.efficacy);
+                      if (eff.isEmpty) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              margin: const EdgeInsets.only(right: 6, top: 1.5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE0F2FE),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                '効用',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Color(0xFF0284C7),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                eff,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  color: Color(0xFF0369A1),
+                                  height: 1.35,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
@@ -589,8 +620,8 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
                     icon: Icons.health_and_safety,
                     iconColor: const Color(0xFF059669),
                     title: '効能・効果 (お薬の効用)',
-                    content: (med.efficacy != null && med.efficacy!.isNotEmpty)
-                        ? med.efficacy!
+                    content: MedicationEfficacyHelper.getEfficacy(med.name, med.efficacy).isNotEmpty
+                        ? MedicationEfficacyHelper.getEfficacy(med.name, med.efficacy)
                         : '情報が登録されていません。医師や薬剤師にご相談ください。',
                     bgColor: const Color(0xFFF0FDF4),
                   ),
@@ -1267,11 +1298,16 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
                               ],
                             ),
                             const SizedBox(height: 4),
-                            Text('用法: ${med.dosage}', style: const TextStyle(fontSize: 12, color: Colors.black87)),
-                            if (med.efficacy != null && med.efficacy!.isNotEmpty) ...[
-                              const SizedBox(height: 3),
-                              Text('効能: ${med.efficacy}', style: const TextStyle(fontSize: 11, color: Colors.black54)),
-                            ],
+                            Builder(
+                              builder: (context) {
+                                final eff = MedicationEfficacyHelper.getEfficacy(med.name, med.efficacy);
+                                if (eff.isEmpty) return const SizedBox.shrink();
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 3),
+                                  child: Text('効用: $eff', style: const TextStyle(fontSize: 11, color: Color(0xFF0284C7), fontWeight: FontWeight.w500)),
+                                );
+                              },
+                            ),
                             if (med.sideEffects != null && med.sideEffects!.isNotEmpty) ...[
                               const SizedBox(height: 2),
                               Text('副作用: ${med.sideEffects}', style: const TextStyle(fontSize: 11, color: Colors.black45)),
@@ -1342,8 +1378,15 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
                 icon: const Icon(Icons.check, size: 18),
                 label: const Text('お薬手帳に登録', style: TextStyle(fontWeight: FontWeight.bold)),
                 onPressed: () {
+                  // 各薬品の効能を自動補完して保存
+                  final enrichedMedications = record.medications.map((m) {
+                    final eff = MedicationEfficacyHelper.getEfficacy(m.name, m.efficacy);
+                    return m.copyWith(efficacy: eff.isNotEmpty ? eff : m.efficacy);
+                  }).toList();
+                  final enrichedRecord = record.copyWith(medications: enrichedMedications);
+
                   // お薬手帳に追加
-                  healthProvider.addPrescription(record);
+                  healthProvider.addPrescription(enrichedRecord);
 
                   // 今日の服薬記録にも反映
                   if (addToTodayMeds && record.medications.isNotEmpty) {
