@@ -78,92 +78,23 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.black54),
-            tooltip: 'サンプル処方データにリセット',
-            onPressed: () {
-              _showResetDialog(context, healthProvider);
-            },
-          ),
-          IconButton(
             icon: const Icon(Icons.add, color: Color(0xFF00A86B)),
             tooltip: '処方箋を手動追加',
             onPressed: () {
               _showAddPrescriptionDialog(context, healthProvider);
             },
           ),
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.black54),
+            tooltip: 'サンプル処方データにリセット',
+            onPressed: () {
+              _showResetDialog(context, healthProvider);
+            },
+          ),
         ],
       ),
       body: Column(
         children: [
-          // 処方QRコード読み取りクイックカード
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFE8F5E9), Color(0xFFE0F2FE)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-                border: Border.all(color: Colors.white, width: 1.5),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF00A86B).withOpacity(0.15),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.qr_code_scanner, color: Color(0xFF00A86B), size: 24),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '処方QRコード自動読取',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: Color(0xFF1E293B),
-                          ),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          '処方箋のQRから薬効・副作用も自動解析',
-                          style: TextStyle(fontSize: 11, color: Colors.black54),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00A86B),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    icon: const Icon(Icons.camera_alt, size: 15),
-                    label: const Text('読取', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                    onPressed: () => _openQrScanner(context, healthProvider),
-                  ),
-                ],
-              ),
-            ),
-          ),
           // 検索バー
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -219,15 +150,39 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: const Color(0xFF00A86B),
-        foregroundColor: Colors.white,
-        elevation: 4,
-        icon: const Icon(Icons.add_photo_alternate_outlined),
-        label: const Text('処方箋を追加', style: TextStyle(fontWeight: FontWeight.bold)),
-        onPressed: () {
-          _showAddPrescriptionDialog(context, healthProvider);
-        },
+      floatingActionButton: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'fab_manual_prescription',
+            backgroundColor: Colors.white,
+            foregroundColor: const Color(0xFF1E293B),
+            elevation: 3,
+            icon: const Icon(Icons.edit_note, color: Color(0xFF00A86B), size: 20),
+            label: const Text(
+              '手入力',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            onPressed: () {
+              _showAddPrescriptionDialog(context, healthProvider);
+            },
+          ),
+          const SizedBox(width: 10),
+          FloatingActionButton.extended(
+            heroTag: 'fab_qr_prescription',
+            backgroundColor: const Color(0xFF00A86B),
+            foregroundColor: Colors.white,
+            elevation: 4,
+            icon: const Icon(Icons.qr_code_scanner, size: 20),
+            label: const Text(
+              '処方QR読取',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            onPressed: () {
+              _openQrScanner(context, healthProvider);
+            },
+          ),
+        ],
       ),
     );
   }
