@@ -11,6 +11,7 @@ import '../services/gemini_service.dart';
 import '../providers/health_provider.dart';
 import '../models/health_record.dart';
 import '../models/prescription_record.dart';
+import '../services/prescription_qr_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,6 +23,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _controller = TextEditingController();
   final GeminiService _geminiService = GeminiService();
+  final PrescriptionQrService _qrService = PrescriptionQrService();
   final ImagePicker _picker = ImagePicker();
   XFile? _selectedImage;
   Uint8List? _selectedImageBytes;
@@ -114,11 +116,44 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       Map<String, dynamic> result;
       if (imageBytesToProcess != null) {
+        // 画像内の処方QRコード・お薬手帳バーコードを自動検出
+        String? qrRawData;
+        if (imageToProcess != null) {
+          try {
+            qrRawData = await _qrService.scanQrFromImagePath(imageToProcess.path);
+          } catch (e) {
+            debugPrint('Chat image QR pre-scan error: $e');
+          }
+        }
+
+        String combinedExtra = messageText;
+        if (qrRawData != null && qrRawData.isNotEmpty) {
+          final qrPrompt = "\n【画像から検出された処方QRコード・お薬手帳の生テキスト】:\n$qrRawData\n※この処方QRデータから処方薬、用法用量、病院名、薬局名、効能・副作用を抽出し、prescriptionおよびmedicationsに確実に格納してください。";
+          combinedExtra = combinedExtra.isEmpty ? qrPrompt : "$combinedExtra\n$qrPrompt";
+        }
+
         result = await _geminiService.extractHealthDataFromImage(
           imageBytesToProcess, 
           imageToProcess?.mimeType ?? 'image/jpeg', 
-          extraInput: messageText
+          extraInput: combinedExtra
         );
+
+        // QRコードが検出されたのにAI抽出で薬品・処方が漏れていた場合のフォールバック補完
+        if (qrRawData != null && qrRawData.isNotEmpty) {
+          final localPres = PrescriptionQrService.parseLocalJahisOrText(qrRawData);
+          if (localPres.medications.isNotEmpty) {
+            final currentMeds = (result['medications'] as List?) ?? [];
+            if (currentMeds.isEmpty) {
+              result['medications'] = localPres.medications.map((m) => {'name': m.name, 'dosage': m.dosage}).toList();
+            }
+            if (result['prescription'] == null || (result['prescription'] is Map && (result['prescription'] as Map).isEmpty)) {
+              result['prescription'] = localPres.toJson();
+            }
+            if (result['reply'] == null || (result['reply'] as String).contains('見つけることができませんでした')) {
+              result['reply'] = '写真の処方QRコードから「${localPres.hospitalName}」の処方データとお薬（${localPres.medications.map((m) => m.name).join('、')}）を解析・記録しました！';
+            }
+          }
+        }
       } else {
         result = await _geminiService.extractHealthData(messageText);
       }

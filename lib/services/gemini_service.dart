@@ -317,4 +317,75 @@ Markdownのコードブロック(```json)は含めず、純粋なJSON文字列�
       return {'error': 'API error', 'message': e.toString()};
     }
   }
+
+  /// 処方箋・お薬手帳のQRコード生テキスト（JAHIS形式、URL、JSON等）を解析して構造化処方データを生成
+  Future<Map<String, dynamic>> parsePrescriptionFromQrText(String qrRawText) async {
+    final now = DateTime.now();
+    final todayStr = "${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+
+    final prompt = """
+あなたは日本の調剤薬局・医療システムに精通した医療専門AIです。
+現在の日付（基準日）: $todayStr
+以下は処方箋やお薬手帳のQRコード（JAHIS標準電子お薬手帳データ形式、またはURL、カンマ区切りテキスト、JSONなど）から読み取られた生データです。
+このデータから医療機関名、調剤薬局名、処方日・調剤日、および処方された各薬品の情報を抽出し、各薬品の分かりやすい効能・効果、主な副作用、注意事項を補完して、指定されたJSONフォーマットのみで出力してください。マークダウンブロック（```json）は含めないでください。
+
+【抽出・生成指示】
+1. date: 処方日または調剤日（"YYYY-MM-DD"形式）。QRデータ内に日付（例: 20260908, 2026/09/08等）があればその日付、不明なら基準日（$todayStr）。
+2. hospital_name: 発行医療機関名（病院・クリニック名、例: 栗田皮フ科、不明なら「処方医療機関」）。
+3. department: 診療科（例: 皮膚科、内科等、不明ならnull）。
+4. doctor_name: 医師名（不明ならnull）。
+5. pharmacy_name: 調剤薬局名（例: オリーブ薬局幕張本郷店、不明ならnull）。
+6. cost: 自己負担額（数値、円、不明ならnull）。
+7. medications: 処方された薬品の詳細リスト（最低1つ以上）。各薬品について：
+   - name: 薬品名（規格・剤形含む、例: "ミグシス錠5mg", "ツムラ川芎茶調散エキス顆粒"）
+   - dosage: 用法用量（例: "1回1錠 1日2回 朝夕食後 14日分"）
+   - category: "内服" / "外用" / "頓服"
+   - efficacy: 薬品の効能・効果のわかりやすい解説（患者向け、例: "片頭痛の発作を起こりにくくするお薬です。"）
+   - side_effects: 主な副作用（例: "眠気、めまい、だるさ"）
+   - precautions: 服用時の注意事項（例: "毎日規則正しく続けて服用してください。"）
+8. reply: お薬手帳登録時のAIヘルスコーチからの温かいアドバイスメッセージ（2〜3文程度）。
+
+読み取り対象データ:
+\"\"\"
+$qrRawText
+\"\"\"
+
+フォーマット:
+{
+  "hospital_name": "医療法人社団 栗田会 栗田皮フ科",
+  "department": "皮膚科",
+  "doctor_name": "栗田 依幸",
+  "pharmacy_name": "オリーブ薬局幕張本郷店",
+  "date": "2026-09-08",
+  "cost": null,
+  "reply": "処方QRコードからお薬手帳データを登録しました。しっかり用法用量を守って服用してくださいね。",
+  "medications": [
+    {
+      "name": "ミグシス錠5mg",
+      "dosage": "1回1錠 1日2回 朝夕食後 14日分",
+      "category": "内服",
+      "efficacy": "脳の血管を安定させ、片頭痛の発作を起こりにくくする予防薬です。",
+      "side_effects": "眠気、ふらつき、だるさ",
+      "precautions": "効果が出るまで数週間かかることがあるため、指示通り毎日続けて服用してください。"
+    }
+  ]
+}
+""";
+
+    try {
+      final content = [Content.text(prompt)];
+      final response = await _generateWithFallback(content);
+      final text = response.text ?? '{}';
+
+      try {
+        final cleanText = text.replaceAll('```json', '').replaceAll('```', '').trim();
+        return jsonDecode(cleanText);
+      } catch (parseError) {
+        return {'error': 'Parse error', 'raw': text};
+      }
+    } catch (e) {
+      print('All Gemini APIs Failed: $e');
+      return {'error': 'API error', 'message': e.toString()};
+    }
+  }
 }
