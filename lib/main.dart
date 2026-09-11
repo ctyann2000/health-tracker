@@ -9,9 +9,22 @@ import 'screens/settings_screen.dart';
 import 'package:provider/provider.dart';
 import 'providers/health_provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:flutter/foundation.dart';
+import 'services/debug_log_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // グローバルFlutterエラーの自動デバッグログ記録
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    DebugLogService.instance.log('[FLUTTER例外] ${details.exceptionAsString()}');
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    DebugLogService.instance.log('[非同期例外] $error');
+    return false;
+  };
+
   try {
     await dotenv.load(fileName: ".env");
   } catch (e) {

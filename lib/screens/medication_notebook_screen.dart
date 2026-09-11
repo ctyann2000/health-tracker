@@ -11,6 +11,7 @@ import '../services/prescription_qr_service.dart';
 import '../services/gemini_service.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
+import '../services/debug_log_service.dart';
 
 /// 本格処方・お薬手帳画面
 class MedicationNotebookScreen extends StatefulWidget {
@@ -102,61 +103,61 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          // 検索バー
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            color: Colors.white,
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: '薬品名、病院名、効能、副作用で検索...',
-                hintStyle: const TextStyle(fontSize: 13, color: Colors.black38),
-                prefixIcon: const Icon(Icons.search, size: 20, color: Color(0xFF00A86B)),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
-                        onPressed: () {
-                          setState(() {
-                            _searchController.clear();
-                            _searchQuery = '';
-                          });
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: const Color(0xFFF1F5F9),
-                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+          Column(
+            children: [
+              // 検索バー
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                color: Colors.white,
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: '薬品名、病院名、効能、副作用で検索...',
+                    prefixIcon: const Icon(Icons.search, color: Colors.black45, size: 20),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: const Color(0xFFF1F5F9),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  onChanged: (val) {
+                    setState(() => _searchQuery = val);
+                  },
                 ),
               ),
-              onChanged: (val) {
-                setState(() {
-                  _searchQuery = val.trim();
-                });
-              },
-            ),
-          ),
 
-          // 処方箋リスト
-          Expanded(
-            child: filteredPrescriptions.isEmpty
-                ? _buildEmptyState(context, healthProvider)
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
-                    itemCount: filteredPrescriptions.length,
-                    itemBuilder: (context, index) {
-                      return _buildPrescriptionCard(
-                        context,
-                        filteredPrescriptions[index],
-                        healthProvider,
-                      ).animate().fade(delay: (index * 80).ms).slideY(begin: 0.05);
-                    },
-                  ),
+              // 処方箋リスト
+              Expanded(
+                child: filteredPrescriptions.isEmpty
+                    ? _buildEmptyState(context, healthProvider)
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
+                        itemCount: filteredPrescriptions.length,
+                        itemBuilder: (context, index) {
+                          return _buildPrescriptionCard(
+                            context,
+                            filteredPrescriptions[index],
+                            healthProvider,
+                          ).animate().fade(delay: (index * 80).ms).slideY(begin: 0.05);
+                        },
+                      ),
+              ),
+            ],
           ),
+          const DebugLogOverlay(height: 140),
         ],
       ),
       floatingActionButton: Padding(
@@ -819,12 +820,15 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
 
   /// 処方QRコードスキャナー（全画面）を開く
   Future<void> _openQrScanner(BuildContext context, HealthProvider healthProvider) async {
+    DebugLogService.instance.log('[スキャナー起動] カメラ画面を開きます');
     final result = await Navigator.push<dynamic>(
       context,
       MaterialPageRoute(
         builder: (scannerCtx) => const _QrScannerScreen(),
       ),
     );
+
+    DebugLogService.instance.log('[スキャナー復帰] 結果: $result');
 
     if (!context.mounted || result == null) return;
 
@@ -841,6 +845,7 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
     // QRコード検知結果（List）が返ってきた場合
     if (result is List && result.isNotEmpty) {
       final qrs = result.map((e) => e.toString()).toList();
+      DebugLogService.instance.log('[スキャナー検知] ${qrs.length}件のQRコードを受信');
       final combined = qrs.join('\n');
       _processQrText(context, healthProvider, combined);
     }
@@ -853,13 +858,19 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
     ImageSource source = ImageSource.camera,
   }) async {
     final picker = ImagePicker();
+    DebugLogService.instance.log('[画像取得] ソース: $source でピッカー起動');
     final XFile? image = await picker.pickImage(
       source: source,
       maxWidth: 1600,
       maxHeight: 1600,
       imageQuality: 85,
     );
-    if (image == null) return;
+    if (image == null) {
+      DebugLogService.instance.log('[画像取得] キャンセルされました');
+      return;
+    }
+
+    DebugLogService.instance.log('[画像取得] 撮影/選択完了: name=${image.name}, mime=${image.mimeType}');
 
     if (!context.mounted) return;
 
@@ -907,12 +918,15 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
     try {
       // 画像バイト配列を先行取得（Web環境でも安全に処理）
       final bytes = await image.readAsBytes();
+      DebugLogService.instance.log('[画像処理] バイト配列取得完了: ${bytes.length} bytes');
 
       // 1. 静止画からQRコード（複数・分割QR対応 / Webネイティブ BarcodeDetector & jsQR）の検出を試みる
+      DebugLogService.instance.log('[QR検出] 画像からQRコードスキャン開始 (BarcodeDetector + jsQR)');
       String? qrText = await _qrService.scanQrFromImagePath(image.path, imageBytes: bytes);
 
       // 2. QRコードが生テキストで取得できた場合はそれをパース
       if (qrText != null && qrText.trim().isNotEmpty) {
+        DebugLogService.instance.log('[QR検出成功] ✓ ${qrText.length}文字のQRを検出!');
         hideProgress();
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -927,6 +941,8 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
         return;
       }
 
+      DebugLogService.instance.log('[QR検出] QRコードは検出されませんでした。Gemini AI OCRへ移行');
+
       // 3. QRコードが画像から検出できなかった場合、画像そのものをGeminiマルチモーダルAIに送信して文字認識（OCR）
       dialogSetState?.call(() {
         statusText = '処方箋の文字をAI解析中...';
@@ -934,11 +950,14 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
       });
 
       final geminiService = GeminiService();
+      DebugLogService.instance.log('[AI解析] GeminiService.extractHealthDataFromImage 呼出中...');
       final result = await geminiService.extractHealthDataFromImage(
         bytes,
         image.mimeType ?? 'image/jpeg',
         extraInput: '処方箋・調剤明細書・お薬手帳の写真です。薬品名（ミグシス、エペリゾン、ロキソプロフェン、ヒルロイド等）、用法用量、病院名、薬局名、効能・副作用を確実に抽出してprescriptionフィールドに格納してください。',
       );
+
+      DebugLogService.instance.log('[AI解析完了] 結果キー: ${result.keys.toList()}');
 
       hideProgress();
 
@@ -946,6 +965,7 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
         final presMap = Map<String, dynamic>.from(result['prescription']);
         final record = PrescriptionRecord.fromJson(presMap);
         if (context.mounted && record.medications.isNotEmpty) {
+          DebugLogService.instance.log('[AI解析成功] ${record.medications.length}件の薬品を抽出');
           _showParsedPrescriptionConfirmDialog(context, healthProvider, record);
           return;
         }
@@ -971,10 +991,13 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
           medications: meds,
         );
         if (context.mounted) {
+          DebugLogService.instance.log('[AI解析成功] 代替リストから ${record.medications.length}件の薬品を抽出');
           _showParsedPrescriptionConfirmDialog(context, healthProvider, record);
           return;
         }
       }
+
+      DebugLogService.instance.log('[AI解析失敗] 有効な薬品情報が見つかりませんでした: $result');
 
       if (context.mounted) {
         final errDetail = result['message'] ?? result['error'] ?? '';
@@ -992,7 +1015,8 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
           ),
         );
       }
-    } catch (e) {
+    } catch (e, stack) {
+      DebugLogService.instance.log('[写真解析例外] エラー: $e\n$stack');
       hideProgress();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1017,6 +1041,7 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
     HealthProvider healthProvider,
     String qrText,
   ) async {
+    DebugLogService.instance.log('[QRパース] テキスト長: ${qrText.length}文字。ローカルJAHIS解析中...');
     // 1. まず内蔵JAHISローカルパーサーで解析（所要時間0.001秒）
     final localRecord = PrescriptionQrService.parseLocalJahisOrText(qrText);
     final hasValidMeds = localRecord.medications.any(
@@ -1025,11 +1050,14 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
 
     // 処方箋QR（JAHIS規格）等で薬品名が取得できた場合は、待機時間0秒で即座に確認ダイアログを表示！
     if (hasValidMeds) {
+      DebugLogService.instance.log('[QRローカル解析成功] ✓ ${localRecord.medications.length}件の薬品を展開');
       if (context.mounted) {
         _showParsedPrescriptionConfirmDialog(context, healthProvider, localRecord);
       }
       return;
     }
+
+    DebugLogService.instance.log('[QRローカル未検出] JAHIS規格外のためGemini AIパースへ移行');
 
     // 2. ローカル解析で薬品名が不十分な場合のみ、AI解析ローディングを表示してGeminiを呼ぶ
     if (!context.mounted) return;
@@ -1068,16 +1096,18 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
 
     try {
       final record = await _qrService.parsePrescriptionText(qrText);
+      DebugLogService.instance.log('[QR AI解析成功] ✓ ${record.medications.length}件の薬品を展開');
       hideProgress();
       if (context.mounted) {
         _showParsedPrescriptionConfirmDialog(context, healthProvider, record);
       }
-    } catch (e) {
+    } catch (e, stack) {
+      DebugLogService.instance.log('[QR AI解析例外] エラー: $e\n$stack');
       hideProgress();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('処方QRコードの解析に失敗しました: $e'),
+            content: Text('処方QRの解析に失敗しました: $e'),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -1360,15 +1390,18 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
   @override
   void initState() {
     super.initState();
+    DebugLogService.instance.log('[スキャナー] カメラコントローラー初期化開始');
     _controller = MobileScannerController(
       formats: const [BarcodeFormat.qrCode],
       detectionSpeed: DetectionSpeed.normal,
       returnImage: false,
     );
+    DebugLogService.instance.log('[スキャナー] カメラコントローラー生成完了');
   }
 
   @override
   void dispose() {
+    DebugLogService.instance.log('[スキャナー] dispose 実行 (コントローラー破棄)');
     _autoPopTimer?.cancel();
     _controller.dispose();
     super.dispose();
@@ -1384,15 +1417,19 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
         if (!_scannedQrs.contains(trimmed)) {
           _scannedQrs.add(trimmed);
           hasNew = true;
+          final preview = trimmed.length > 25 ? '${trimmed.substring(0, 25)}...' : trimmed;
+          DebugLogService.instance.log('[スキャナー検知] QRコード検知(${trimmed.length}文字): "$preview"');
         }
       }
     }
 
     if (hasNew) {
       setState(() {});
+      DebugLogService.instance.log('[スキャナー] 現在累計 ${_scannedQrs.length}件のQRを保持。800msタイマー開始');
       // 1件以上検知されたら、複数QRの取りこぼしを防ぐため 800ミリ秒後に自動で結果を返して画面を閉じる
       _autoPopTimer?.cancel();
       _autoPopTimer = Timer(const Duration(milliseconds: 800), () {
+        DebugLogService.instance.log('[スキャナー] 800msタイマー発火。親画面へ返却');
         _finishAndPop();
       });
     }
@@ -1402,6 +1439,7 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
     if (_isFinished || _scannedQrs.isEmpty || !mounted) return;
     _isFinished = true;
     _autoPopTimer?.cancel();
+    DebugLogService.instance.log('[スキャナー終了] ${_scannedQrs.length}件のQRコードを親画面へNavigator.popします');
     Navigator.pop(context, _scannedQrs.toList());
   }
 
@@ -1670,6 +1708,13 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
                 ),
               ],
             ),
+          ),
+
+          // ライブ調査ログオーバーレイ（上部バー直下に配置）
+          const DebugLogOverlay(
+            height: 120,
+            alignment: Alignment.topCenter,
+            margin: EdgeInsets.fromLTRB(10, 80, 10, 0),
           ),
         ],
       ),

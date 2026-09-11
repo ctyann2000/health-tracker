@@ -179,6 +179,16 @@
   </script>
   <!-- jsQR 軽量QRコード解析ライブラリ -->
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <!-- Eruda スマホ用インスペクター＆コンソール（原因調査用） -->
+  <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+  <script>
+    try {
+      eruda.init();
+      console.log('[Eruda] Mobile DevTools initialized');
+    } catch(e) {
+      console.warn('[Eruda] Init failed', e);
+    }
+  </script>
 </head>
 <body>
   <script>
