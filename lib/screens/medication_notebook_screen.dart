@@ -864,27 +864,36 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
     if (!context.mounted) return;
 
     bool isProgressShowing = true;
+    String statusText = '処方写真・QRコードを検出中...';
+    String subText = '薬品名・用法用量・医療機関を自動認識しています';
+    void Function(void Function())? dialogSetState;
+
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => const Center(
-        child: Card(
-          color: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(16))),
-          child: Padding(
-            padding: EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(color: Color(0xFF00A86B)),
-                SizedBox(height: 16),
-                Text('処方写真・QRコードをAI解析中...', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                SizedBox(height: 6),
-                Text('薬品名・用法用量・医療機関を自動認識しています', style: TextStyle(fontSize: 12, color: Colors.black54)),
-              ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSt) {
+          dialogSetState = setSt;
+          return Center(
+            child: Card(
+              color: Colors.white,
+              shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(16))),
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(color: Color(0xFF00A86B)),
+                    const SizedBox(height: 16),
+                    Text(statusText, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                    const SizedBox(height: 6),
+                    Text(subText, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     ).then((_) => isProgressShowing = false);
 
@@ -899,24 +908,36 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
       // 画像バイト配列を先行取得（Web環境でも安全に処理）
       final bytes = await image.readAsBytes();
 
-      // 1. 静止画からQRコード（複数・分割QR対応 / Webネイティブ BarcodeDetector）の検出を試みる
+      // 1. 静止画からQRコード（複数・分割QR対応 / Webネイティブ BarcodeDetector & jsQR）の検出を試みる
       String? qrText = await _qrService.scanQrFromImagePath(image.path, imageBytes: bytes);
 
       // 2. QRコードが生テキストで取得できた場合はそれをパース
       if (qrText != null && qrText.trim().isNotEmpty) {
         hideProgress();
         if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✓ 写真から処方QRコードを検出しました！'),
+              backgroundColor: Color(0xFF00A86B),
+              duration: Duration(seconds: 2),
+            ),
+          );
           _processQrText(context, healthProvider, qrText);
         }
         return;
       }
 
       // 3. QRコードが画像から検出できなかった場合、画像そのものをGeminiマルチモーダルAIに送信して文字認識（OCR）
+      dialogSetState?.call(() {
+        statusText = '処方箋の文字をAI解析中...';
+        subText = '薬品名・病院名・用法用量を読み取っています';
+      });
+
       final geminiService = GeminiService();
       final result = await geminiService.extractHealthDataFromImage(
         bytes,
         image.mimeType ?? 'image/jpeg',
-        extraInput: '処方箋・調剤明細書・お薬手帳のQRコード写真です。薬品名（ミグシス、エペリゾン、ロキソプロフェン等）、用法用量、病院名、薬局名、効能・副作用を確実に抽出してprescriptionフィールドに格納してください。',
+        extraInput: '処方箋・調剤明細書・お薬手帳の写真です。薬品名（ミグシス、エペリゾン、ロキソプロフェン、ヒルロイド等）、用法用量、病院名、薬局名、効能・副作用を確実に抽出してprescriptionフィールドに格納してください。',
       );
 
       hideProgress();
@@ -956,10 +977,18 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
       }
 
       if (context.mounted) {
+        final errDetail = result['message'] ?? result['error'] ?? '';
+        final detailText = errDetail.toString().isNotEmpty ? ' ($errDetail)' : '';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('写真から処方情報を検出できませんでした。文字やQRコードがはっきり写るように撮影してください。'),
+          SnackBar(
+            content: Text('写真から処方情報を検出できませんでした$detailText。手動で入力するか、文字がはっきり写るように撮影してください。'),
             backgroundColor: Colors.redAccent,
+            duration: const Duration(seconds: 6),
+            action: SnackBarAction(
+              label: '手動入力',
+              textColor: Colors.white,
+              onPressed: () => _showAddPrescriptionDialog(context, healthProvider),
+            ),
           ),
         );
       }
@@ -970,6 +999,12 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
           SnackBar(
             content: Text('処方写真の解析に失敗しました: $e'),
             backgroundColor: Colors.redAccent,
+            duration: const Duration(seconds: 6),
+            action: SnackBarAction(
+              label: '手動入力',
+              textColor: Colors.white,
+              onPressed: () => _showAddPrescriptionDialog(context, healthProvider),
+            ),
           ),
         );
       }
