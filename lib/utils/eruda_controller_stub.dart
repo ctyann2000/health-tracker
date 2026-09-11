@@ -1,0 +1,1 @@
+void setErudaVisible(bool visible) {}

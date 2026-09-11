@@ -25,6 +25,8 @@ void main() async {
     return false;
   };
 
+  await DebugLogService.instance.init();
+
   try {
     await dotenv.load(fileName: ".env");
   } catch (e) {

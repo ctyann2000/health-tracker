@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/health_provider.dart';
 import '../services/gemini_service.dart';
+import '../services/debug_log_service.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -276,6 +277,42 @@ class SettingsScreen extends StatelessWidget {
                         ],
                       ),
                     ).animate().fade(delay: 300.ms).slideY(begin: 0.05),
+
+                    const SizedBox(height: 28),
+
+                    // --- セクション5: システム診断 & デバッグ ---
+                    _buildSectionHeader('システム診断 & 開発者ログ'),
+                    const SizedBox(height: 10),
+                    _buildGlassCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '不具合調査やQRコード解析の診断ログを確認・コピーしたり、画面上に開発者ツールを表示できます。',
+                            style: TextStyle(fontSize: 13, color: Colors.black54, height: 1.5),
+                          ),
+                          const SizedBox(height: 14),
+                          // ログ表示ダイアログを開くボタン
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () => DebugLogService.showLogDialog(context),
+                              icon: const Icon(Icons.terminal, size: 18),
+                              label: const Text('システム調査ログを表示'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF1E293B),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                elevation: 0,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ).animate().fade(delay: 400.ms).slideY(begin: 0.05),
                   ],
                 ),
               );
