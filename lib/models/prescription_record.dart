@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 /// 処方された各薬品の詳細情報
 class PrescriptionMedication {
@@ -81,17 +81,38 @@ class PrescriptionRecord {
       }
     }
 
+    DateTime parsedDate;
+    try {
+      if (json['date'] != null) {
+        final dStr = json['date'].toString().replaceAll('/', '-');
+        parsedDate = DateTime.parse(dStr);
+      } else {
+        parsedDate = DateTime.now();
+      }
+    } catch (_) {
+      parsedDate = DateTime.now();
+    }
+
+    int? parsedCost;
+    if (json['cost'] != null) {
+      if (json['cost'] is num) {
+        parsedCost = (json['cost'] as num).toInt();
+      } else {
+        parsedCost = int.tryParse(json['cost'].toString().replaceAll(RegExp(r'[^0-9]'), ''));
+      }
+    }
+
     return PrescriptionRecord(
-      id: json['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
-      date: json['date'] != null ? DateTime.parse(json['date']) : DateTime.now(),
+      id: json['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      date: parsedDate,
       hospitalName: json['hospitalName'] ?? json['hospital_name'] ?? '医療機関',
-      department: json['department'],
+      department: json['department']?.toString(),
       doctorName: json['doctorName'] ?? json['doctor_name'],
       pharmacyName: json['pharmacyName'] ?? json['pharmacy_name'],
       pharmacistName: json['pharmacistName'] ?? json['pharmacist_name'],
-      cost: json['cost'] as int?,
+      cost: parsedCost,
       medications: medsList,
-      notes: json['notes'],
+      notes: json['notes']?.toString(),
     );
   }
 

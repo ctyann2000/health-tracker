@@ -13,9 +13,17 @@ class PrescriptionQrService {
 
   /// 静止画ファイルパスからQRコードを読み取り、生テキストを抽出する（複数・分割QRコードに対応）
   Future<String?> scanQrFromImagePath(String imagePath) async {
+    // Web環境では analyzeImage はプラットフォーム制限やハングの要因となりうるため
+    // 安全に null を返して Gemini マルチモーダル画像認識（OCR）へフォールバックさせる
+    if (kIsWeb) {
+      return null;
+    }
+
     final controller = MobileScannerController();
     try {
-      final BarcodeCapture? capture = await controller.analyzeImage(imagePath);
+      final BarcodeCapture? capture = await controller
+          .analyzeImage(imagePath)
+          .timeout(const Duration(milliseconds: 1500), onTimeout: () => null);
       if (capture != null && capture.barcodes.isNotEmpty) {
         final values = <String>[];
         for (final barcode in capture.barcodes) {

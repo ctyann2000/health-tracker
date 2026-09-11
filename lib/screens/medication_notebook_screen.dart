@@ -838,19 +838,22 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
     final picker = ImagePicker();
     final XFile? image = await picker.pickImage(
       source: source,
-      maxWidth: 2400,
-      maxHeight: 2400,
-      imageQuality: 90,
+      maxWidth: 1600,
+      maxHeight: 1600,
+      imageQuality: 85,
     );
     if (image == null) return;
 
     if (!context.mounted) return;
+
+    bool isProgressShowing = true;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => const Center(
         child: Card(
           color: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(16))),
           child: Padding(
             padding: EdgeInsets.all(24.0),
             child: Column(
@@ -858,41 +861,46 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
               children: [
                 CircularProgressIndicator(color: Color(0xFF00A86B)),
                 SizedBox(height: 16),
-                Text('処方写真・QRコードをAI解析中...', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text('処方写真・QRコードをAI解析中...', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                 SizedBox(height: 6),
-                Text('処方箋の薬品・用法・病院名を整理しています', style: TextStyle(fontSize: 11, color: Colors.black54)),
+                Text('薬品名・用法用量・医療機関を自動認識しています', style: TextStyle(fontSize: 12, color: Colors.black54)),
               ],
             ),
           ),
         ),
       ),
-    );
+    ).then((_) => isProgressShowing = false);
 
-    // 1. 写真からQRコード（複数・分割QRコード対応）を抽出
-    String? qrText = await _qrService.scanQrFromImagePath(image.path);
-
-    // 2. QRコードが生テキストで取得できた場合はそれをパース
-    if (qrText != null && qrText.trim().isNotEmpty) {
-      if (context.mounted) {
-        Navigator.pop(context); // ローディングを閉じる
-        _processQrText(context, healthProvider, qrText);
+    void hideProgress() {
+      if (isProgressShowing && context.mounted) {
+        Navigator.pop(context);
+        isProgressShowing = false;
       }
-      return;
     }
 
-    // 3. QRコードが直接デコードできなかった場合、写真そのものをGemini画像認識に送信して文字認識
     try {
+      // 1. 静止画からQRコード（複数・分割QR対応）の検出を試みる
+      String? qrText = await _qrService.scanQrFromImagePath(image.path);
+
+      // 2. QRコードが生テキストで取得できた場合はそれをパース
+      if (qrText != null && qrText.trim().isNotEmpty) {
+        hideProgress();
+        if (context.mounted) {
+          _processQrText(context, healthProvider, qrText);
+        }
+        return;
+      }
+
+      // 3. QRコードが画像から検出できなかった場合、画像そのものをGeminiマルチモーダルAIに送信して文字認識（OCR）
       final bytes = await image.readAsBytes();
       final geminiService = GeminiService();
       final result = await geminiService.extractHealthDataFromImage(
         bytes,
         image.mimeType ?? 'image/jpeg',
-        extraInput: '処方箋・お薬手帳のQRコード写真です。処方薬、用法用量、病院名、薬局名、効能・副作用を確実に抽出してprescriptionに格納してください。',
+        extraInput: '処方箋・調剤明細書・お薬手帳のQRコード写真です。薬品名（ミグシス、エペリゾン、ロキソプロフェン等）、用法用量、病院名、薬局名、効能・副作用を確実に抽出してprescriptionフィールドに格納してください。',
       );
 
-      if (context.mounted) {
-        Navigator.pop(context); // ローディングを閉じる
-      }
+      hideProgress();
 
       if (result['prescription'] != null && result['prescription'] is Map) {
         final presMap = Map<String, dynamic>.from(result['prescription']);
@@ -903,14 +911,14 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
         }
       }
 
-      // もしprescriptionが取れなくてもmedicationsが取れていればPrescriptionRecordに変換
+      // もしprescriptionが空でもmedicationsリストが抽出されていればPrescriptionRecordに変換
       final medsList = (result['medications'] as List?) ?? [];
       if (medsList.isNotEmpty) {
         final meds = medsList.map((m) {
           if (m is Map) {
             return PrescriptionMedication(
-              name: m['name'] ?? '処方薬',
-              dosage: m['dosage'] ?? '指示通り服用',
+              name: m['name']?.toString() ?? '処方薬',
+              dosage: m['dosage']?.toString() ?? '指示通り服用',
               category: '内服',
             );
           }
@@ -931,14 +939,14 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('写真から処方情報を検出できませんでした。処方QRコードまたは処方箋の文字がはっきり写るように撮影してください。'),
+            content: Text('写真から処方情報を検出できませんでした。文字やQRコードがはっきり写るように撮影してください。'),
             backgroundColor: Colors.redAccent,
           ),
         );
       }
     } catch (e) {
+      hideProgress();
       if (context.mounted) {
-        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('処方写真の解析に失敗しました: $e'),
@@ -1383,9 +1391,15 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
                         ),
                         icon: const Icon(Icons.camera_alt),
                         label: const Text('カメラで撮影して解析', style: TextStyle(fontWeight: FontWeight.bold)),
-                        onPressed: () {
-                          Navigator.pop(context);
-                          widget.onCapturePhoto();
+                        onPressed: () async {
+                          try {
+                            await _controller.stop();
+                          } catch (_) {}
+                          if (context.mounted) {
+                            Navigator.pop(context);
+                            await Future.delayed(const Duration(milliseconds: 250));
+                            widget.onCapturePhoto();
+                          }
                         },
                       ),
                     ],
@@ -1403,20 +1417,25 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.65),
+                color: Colors.black.withOpacity(0.75),
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: Colors.white.withOpacity(0.15)),
               ),
               child: Column(
                 children: [
-                  const Row(
+                  Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.qr_code, color: Color(0xFF00A86B), size: 18),
-                      SizedBox(width: 8),
-                      Text(
-                        '処方箋のQRコードを枠に合わせてください',
-                        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                      const Icon(Icons.qr_code_scanner, color: Color(0xFF00E676), size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _scannedQrs.isEmpty
+                              ? '💡 カメラを近づけてQRコードを1つずつ大きく写してください'
+                              : '✓ ${_scannedQrs.length}個のQRコードを検知中（続けて他も読み取れます）',
+                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                          textAlign: TextAlign.center,
+                        ),
                       ),
                     ],
                   ),
@@ -1429,8 +1448,8 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        '✓ ${_scannedQrs.length}個のQRコードを検知中',
-                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                        '合計 ${_scannedQrs.length} 件検知（まもなく自動で進みます）',
+                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ],
@@ -1439,7 +1458,7 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
             ),
           ),
 
-          // スキャンターゲットフレーム（処方箋の複数横並びQRコードに最適化した横長）
+          // スキャンターゲットフレーム
           Center(
             child: Container(
               width: targetWidth,
@@ -1458,12 +1477,13 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
                     const Align(
                       alignment: Alignment.center,
                       child: Text(
-                        '複数あるQRコード（1〜3個）を\n枠内に収めてください',
+                        'カメラを近づけて\nQRコードを1つずつ枠に合わせてください\n（遠いと読み取れません）',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: Colors.white70,
+                          color: Colors.white,
                           fontSize: 12,
-                          shadows: [Shadow(color: Colors.black, blurRadius: 4)],
+                          fontWeight: FontWeight.w600,
+                          shadows: [Shadow(color: Colors.black, blurRadius: 6)],
                         ),
                       ),
                     ),
@@ -1517,9 +1537,15 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
                           '写真撮影で一発解析',
                           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                         ),
-                        onPressed: () {
-                          Navigator.pop(context);
-                          widget.onCapturePhoto();
+                        onPressed: () async {
+                          try {
+                            await _controller.stop();
+                          } catch (_) {}
+                          if (context.mounted) {
+                            Navigator.pop(context);
+                            await Future.delayed(const Duration(milliseconds: 250));
+                            widget.onCapturePhoto();
+                          }
                         },
                       ),
                     ),
@@ -1538,9 +1564,15 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
                           'アルバムから選択',
                           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                         ),
-                        onPressed: () {
-                          Navigator.pop(context);
-                          widget.onPickGallery();
+                        onPressed: () async {
+                          try {
+                            await _controller.stop();
+                          } catch (_) {}
+                          if (context.mounted) {
+                            Navigator.pop(context);
+                            await Future.delayed(const Duration(milliseconds: 250));
+                            widget.onPickGallery();
+                          }
                         },
                       ),
                     ),
