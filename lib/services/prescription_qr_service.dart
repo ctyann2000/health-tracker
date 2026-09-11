@@ -4,6 +4,8 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../models/prescription_record.dart';
 import 'gemini_service.dart';
 
+import '../utils/web_qr_detector.dart';
+
 /// 処方箋・お薬手帳のQRコード解析を行うサービス
 class PrescriptionQrService {
   final GeminiService _geminiService;
@@ -11,10 +13,35 @@ class PrescriptionQrService {
   PrescriptionQrService({GeminiService? geminiService})
       : _geminiService = geminiService ?? GeminiService();
 
-  /// 静止画ファイルパスからQRコードを読み取り、生テキストを抽出する（複数・分割QRコードに対応）
-  Future<String?> scanQrFromImagePath(String imagePath) async {
-    // Web環境では analyzeImage はプラットフォーム制限やハングの要因となりうるため
-    // 安全に null を返して Gemini マルチモーダル画像認識（OCR）へフォールバックさせる
+  /// 静止画バイトデータからQRコードを高速検出（Web / モバイル両対応）
+  Future<String?> scanQrFromBytes(Uint8List bytes) async {
+    // 1. Web環境: ブラウザネイティブの BarcodeDetector を最優先（0.01秒）
+    if (kIsWeb) {
+      try {
+        final qrs = await WebQrDetector.detectQr(bytes);
+        if (qrs.isNotEmpty) {
+          debugPrint('[PrescriptionQrService] WebネイティブBarcodeDetectorでQR検知: ${qrs.length}件');
+          return qrs.join('\n');
+        }
+      } catch (e) {
+        debugPrint('[PrescriptionQrService] WebQrDetector error: $e');
+      }
+      return null;
+    }
+
+    return null;
+  }
+
+  /// 静止画ファイルパスまたはバイトからQRコードを読み取り、生テキストを抽出する（複数・分割QRコードに対応）
+  Future<String?> scanQrFromImagePath(String imagePath, {Uint8List? imageBytes}) async {
+    // 1. Web環境またはバイトがある場合: Webネイティブ高速QR検出
+    if (imageBytes != null) {
+      final webResult = await scanQrFromBytes(imageBytes);
+      if (webResult != null && webResult.isNotEmpty) {
+        return webResult;
+      }
+    }
+
     if (kIsWeb) {
       return null;
     }
