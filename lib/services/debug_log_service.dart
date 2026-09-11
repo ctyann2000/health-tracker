@@ -7,7 +7,7 @@ class DebugLogService extends ChangeNotifier {
   DebugLogService._internal();
 
   final List<String> _logs = [];
-  bool _isVisible = true;
+  bool _isVisible = false;
 
   List<String> get logs => List.unmodifiable(_logs);
   bool get isVisible => _isVisible;

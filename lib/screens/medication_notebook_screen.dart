@@ -73,16 +73,19 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.qr_code_scanner, color: Color(0xFF00A86B)),
-            tooltip: '処方QRコードをスキャン',
-            onPressed: () {
-              _openQrScanner(context, healthProvider);
-            },
+          GestureDetector(
+            onLongPress: () => _openQrScanner(context, healthProvider),
+            child: IconButton(
+              icon: const Icon(Icons.qr_code_scanner, color: Color(0xFF00A86B)),
+              tooltip: '処方QRコードを撮影して登録（長押しで連続スキャナー）',
+              onPressed: () {
+                _pickImageAndScanQr(context, healthProvider, source: ImageSource.camera);
+              },
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.camera_alt, color: Color(0xFF00A86B)),
-            tooltip: '処方箋写真をAI解析',
+            tooltip: '処方箋写真を撮影してAI解析',
             onPressed: () {
               _pickImageAndScanQr(context, healthProvider, source: ImageSource.camera);
             },
@@ -180,18 +183,18 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
               child: const Icon(Icons.add, size: 28),
             ),
             const SizedBox(height: 12),
-            // QRコードマーク
+            // QRコード・写真撮影マーク
             FloatingActionButton(
               heroTag: 'fab_qr_prescription',
               backgroundColor: const Color(0xFF00A86B),
               foregroundColor: Colors.white,
               elevation: 6,
               shape: const CircleBorder(),
-              tooltip: '処方QRコードをスキャン',
+              tooltip: '処方QRコード・処方箋を撮影して登録',
               onPressed: () {
-                _openQrScanner(context, healthProvider);
+                _pickImageAndScanQr(context, healthProvider, source: ImageSource.camera);
               },
-              child: const Icon(Icons.qr_code_scanner, size: 28),
+              child: const Icon(Icons.camera_alt, size: 28),
             ),
           ],
         ),
@@ -214,7 +217,7 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              '処方箋やお薬手帳のQRコードを読み取るか、\n手動またはチャットから登録できます。',
+              '処方箋やお薬手帳のQRコードを撮影するか、\n手動またはチャットから登録できます。',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: Colors.black45, height: 1.5),
             ),
@@ -226,9 +229,9 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              icon: const Icon(Icons.qr_code_scanner, size: 20),
-              label: const Text('処方QRコードを読み取る', style: TextStyle(fontWeight: FontWeight.bold)),
-              onPressed: () => _openQrScanner(context, healthProvider),
+              icon: const Icon(Icons.camera_alt, size: 20),
+              label: const Text('処方QR・処方箋を撮影して登録', style: TextStyle(fontWeight: FontWeight.bold)),
+              onPressed: () => _pickImageAndScanQr(context, healthProvider, source: ImageSource.camera),
             ),
           ],
         ),
@@ -1394,6 +1397,7 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
     _controller = MobileScannerController(
       formats: const [BarcodeFormat.qrCode],
       detectionSpeed: DetectionSpeed.normal,
+      cameraResolution: const Size(1920, 1080),
       returnImage: false,
     );
     DebugLogService.instance.log('[スキャナー] カメラコントローラー生成完了');
