@@ -46,27 +46,44 @@ class PrescriptionQrService {
   }
 
   /// QRコードから読み取られた生テキストを解析し、PrescriptionRecordを生成する
-  /// Gemini APIによる高精度解析（効能・副作用等の自動補完）を優先し、
-  /// オフライン時やAPIエラー時は内蔵JAHISローカルパーサーでフォールバック
+  /// JAHIS標準フォーマットのローカル高速解析を最優先（待機時間0秒）で実行し、
+  /// 自由テキスト形式等の場合のみGemini APIへフォールバック
   Future<PrescriptionRecord> parsePrescriptionText(String rawText) async {
     final trimmed = rawText.trim();
     if (trimmed.isEmpty) {
       throw Exception('QRコードのデータが空です。');
     }
 
-    // 1. Gemini APIで解析（効能・副作用等の付加情報を自動補完）
+    // 1. ローカルJAHIS／カンマ区切り／JSON解析を最優先で実行（所要時間0.001秒）
+    final localRecord = parseLocalJahisOrText(trimmed);
+    final hasValidMeds = localRecord.medications.any(
+      (m) => m.name.isNotEmpty && m.name != '処方薬',
+    );
+
+    // 有効な薬品情報が抽出できた場合は即座に返却（ネットワーク待ちなし）
+    if (hasValidMeds) {
+      return localRecord;
+    }
+
+    // 2. ローカル解析で薬品情報が取れなかった場合のみ、Gemini APIによるAI文字・意味解析を実行
     try {
       final apiKey = await _geminiService.getApiKey();
       if (apiKey.isNotEmpty) {
-        final parsedMap = await _geminiService.parsePrescriptionFromQrText(trimmed);
-        return PrescriptionRecord.fromJson(parsedMap);
+        final parsedMap = await _geminiService
+            .parsePrescriptionFromQrText(trimmed)
+            .timeout(const Duration(seconds: 4));
+        if (parsedMap['error'] == null && parsedMap['medications'] != null) {
+          final geminiRecord = PrescriptionRecord.fromJson(parsedMap);
+          if (geminiRecord.medications.isNotEmpty) {
+            return geminiRecord;
+          }
+        }
       }
     } catch (e) {
-      debugPrint('Gemini prescription parse failed, using local fallback: $e');
+      debugPrint('Gemini prescription parse failed, using local result: $e');
     }
 
-    // 2. ローカルフォールバック解析
-    return parseLocalJahisOrText(trimmed);
+    return localRecord;
   }
 
   /// JAHIS電子お薬手帳フォーマット、カンマ区切り、JSON、またはプレーンテキストをローカルで構造化

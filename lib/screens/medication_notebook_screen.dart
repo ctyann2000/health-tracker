@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -957,18 +958,37 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
     }
   }
 
-  /// QRコードテキストをAI/ローカルパーサーで解析し、確認ダイアログを表示
+  /// QRコードテキストをローカル最優先／AIフォールバックで解析し、確認ダイアログを表示
   Future<void> _processQrText(
     BuildContext context,
     HealthProvider healthProvider,
     String qrText,
   ) async {
+    // 1. まず内蔵JAHISローカルパーサーで解析（所要時間0.001秒）
+    final localRecord = PrescriptionQrService.parseLocalJahisOrText(qrText);
+    final hasValidMeds = localRecord.medications.any(
+      (m) => m.name.isNotEmpty && m.name != '処方薬',
+    );
+
+    // 処方箋QR（JAHIS規格）等で薬品名が取得できた場合は、待機時間0秒で即座に確認ダイアログを表示！
+    if (hasValidMeds) {
+      if (context.mounted) {
+        _showParsedPrescriptionConfirmDialog(context, healthProvider, localRecord);
+      }
+      return;
+    }
+
+    // 2. ローカル解析で薬品名が不十分な場合のみ、AI解析ローディングを表示してGeminiを呼ぶ
+    if (!context.mounted) return;
+
+    bool isProgressShowing = true;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => const Center(
         child: Card(
           color: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(16))),
           child: Padding(
             padding: EdgeInsets.all(24.0),
             child: Column(
@@ -984,17 +1004,24 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
           ),
         ),
       ),
-    );
+    ).then((_) => isProgressShowing = false);
+
+    void hideProgress() {
+      if (isProgressShowing && context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        isProgressShowing = false;
+      }
+    }
 
     try {
       final record = await _qrService.parsePrescriptionText(qrText);
+      hideProgress();
       if (context.mounted) {
-        Navigator.pop(context); // ローディングを閉じる
         _showParsedPrescriptionConfirmDialog(context, healthProvider, record);
       }
     } catch (e) {
+      hideProgress();
       if (context.mounted) {
-        Navigator.pop(context); // ローディングを閉じる
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('処方QRコードの解析に失敗しました: $e'),
@@ -1283,11 +1310,14 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
   late final MobileScannerController _controller;
   final Set<String> _scannedQrs = {};
   bool _isFinished = false;
+  Timer? _autoFinishTimer;
 
   @override
   void initState() {
     super.initState();
+    // QRコードのみに限定してCPU/GPU負荷を最小化し、フリーズや停止を防止
     _controller = MobileScannerController(
+      formats: const [BarcodeFormat.qrCode],
       detectionSpeed: DetectionSpeed.normal,
       returnImage: false,
     );
@@ -1295,15 +1325,27 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
 
   @override
   void dispose() {
+    _autoFinishTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
-  void _finishScanning() {
+  Future<void> _finishScanning() async {
     if (_isFinished || _scannedQrs.isEmpty) return;
-    _isFinished = true;
+    _autoFinishTimer?.cancel();
+    setState(() {
+      _isFinished = true;
+    });
+
+    try {
+      await _controller.stop();
+    } catch (_) {}
+
+    if (!mounted) return;
     final combined = _scannedQrs.join('\n');
     Navigator.pop(context);
+    // スキャナー画面が完全に閉じるのを待ってから親のコールバックを実行
+    await Future.delayed(const Duration(milliseconds: 200));
     widget.onQrCodesReady(combined);
   }
 
@@ -1311,7 +1353,7 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     final targetWidth = (screenSize.width * 0.88).clamp(260.0, 380.0);
-    final targetHeight = (screenSize.width * 0.55).clamp(160.0, 240.0); // 処方箋QR（横並び複数）に合わせた横長枠
+    final targetHeight = (screenSize.width * 0.55).clamp(160.0, 240.0);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -1324,7 +1366,12 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
         ),
         leading: IconButton(
           icon: const Icon(Icons.close, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () async {
+            try {
+              await _controller.stop();
+            } catch (_) {}
+            if (context.mounted) Navigator.pop(context);
+          },
         ),
         actions: [
           IconButton(
@@ -1359,8 +1406,9 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
               }
               if (hasNew) {
                 setState(() {});
-                // 1個以上検知されたら1.5秒後に自動で解析へ進む
-                Future.delayed(const Duration(milliseconds: 1500), () {
+                // 1個以上検知されたらタイマーをリセットし1秒後に自動完了
+                _autoFinishTimer?.cancel();
+                _autoFinishTimer = Timer(const Duration(milliseconds: 1000), () {
                   if (mounted && !_isFinished && _scannedQrs.isNotEmpty) {
                     _finishScanning();
                   }
@@ -1419,21 +1467,28 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
               decoration: BoxDecoration(
                 color: Colors.black.withOpacity(0.75),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withOpacity(0.15)),
+                border: Border.all(
+                  color: _scannedQrs.isNotEmpty ? const Color(0xFF00E676) : Colors.white.withOpacity(0.15),
+                  width: _scannedQrs.isNotEmpty ? 2 : 1,
+                ),
               ),
               child: Column(
                 children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.qr_code_scanner, color: Color(0xFF00E676), size: 18),
+                      Icon(
+                        _scannedQrs.isNotEmpty ? Icons.check_circle : Icons.qr_code_scanner,
+                        color: _scannedQrs.isNotEmpty ? const Color(0xFF00E676) : const Color(0xFF00A86B),
+                        size: 20,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           _scannedQrs.isEmpty
-                              ? '💡 カメラを近づけてQRコードを1つずつ大きく写してください'
-                              : '✓ ${_scannedQrs.length}個のQRコードを検知中（続けて他も読み取れます）',
-                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                              ? '処方箋のQRコードを枠に合わせてください'
+                              : '✓ ${_scannedQrs.length}個のQRコードを検知中！',
+                          style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                           textAlign: TextAlign.center,
                         ),
                       ),
@@ -1441,16 +1496,9 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
                   ),
                   if (_scannedQrs.isNotEmpty) ...[
                     const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF00A86B),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '合計 ${_scannedQrs.length} 件検知（まもなく自動で進みます）',
-                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                      ),
+                    const Text(
+                      '続けて他も読み取るか、下のボタンを押してください',
+                      style: TextStyle(color: Colors.white70, fontSize: 11),
                     ),
                   ],
                 ],
@@ -1466,10 +1514,10 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
               decoration: BoxDecoration(
                 border: Border.all(
                   color: _scannedQrs.isNotEmpty ? const Color(0xFF00E676) : const Color(0xFF00A86B),
-                  width: 2.5,
+                  width: _scannedQrs.isNotEmpty ? 3.5 : 2.5,
                 ),
                 borderRadius: BorderRadius.circular(18),
-                color: Colors.transparent,
+                color: _scannedQrs.isNotEmpty ? const Color(0xFF00E676).withOpacity(0.08) : Colors.transparent,
               ),
               child: Stack(
                 children: [
@@ -1477,7 +1525,7 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
                     const Align(
                       alignment: Alignment.center,
                       child: Text(
-                        'カメラを近づけて\nQRコードを1つずつ枠に合わせてください\n（遠いと読み取れません）',
+                        'カメラを近づけて\nQRコードを1つずつ枠に合わせてください',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.white,
@@ -1486,11 +1534,58 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
                           shadows: [Shadow(color: Colors.black, blurRadius: 6)],
                         ),
                       ),
+                    )
+                  else
+                    Align(
+                      alignment: Alignment.center,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.7),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.check_circle, color: Color(0xFF00E676), size: 18),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${_scannedQrs.length}件 検知完了',
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                 ],
               ),
             ),
           ),
+
+          // 処理中オーバーレイ
+          if (_isFinished)
+            Container(
+              color: Colors.black.withOpacity(0.65),
+              child: const Center(
+                child: Card(
+                  color: Colors.white,
+                  child: Padding(
+                    padding: EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(color: Color(0xFF00A86B)),
+                        SizedBox(height: 16),
+                        Text(
+                          '処方データを展開中...',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
 
           // 下部操作パネル
           Positioned(
@@ -1500,23 +1595,27 @@ class _QrScannerScreenState extends State<_QrScannerScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // QRが検知されたら即座にタップして進める大ボタン
                 if (_scannedQrs.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF00A86B),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                        elevation: 6,
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00E676),
+                          foregroundColor: const Color(0xFF0F172A),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          elevation: 8,
+                        ),
+                        icon: const Icon(Icons.check_circle, size: 22, color: Color(0xFF0F172A)),
+                        label: Text(
+                          'このQRコードで今すぐ登録に進む (${_scannedQrs.length}件)',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                        onPressed: _finishScanning,
                       ),
-                      icon: const Icon(Icons.check_circle, size: 20),
-                      label: Text(
-                        '検知したデータで登録に進む (${_scannedQrs.length}件)',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                      ),
-                      onPressed: _finishScanning,
                     ),
                   ),
 
