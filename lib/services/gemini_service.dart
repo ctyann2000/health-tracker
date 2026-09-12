@@ -134,32 +134,61 @@ class GeminiService {
     throw Exception('全モデル試行失敗:\n${errors.join('\n')}');
   }
 
-  Future<Map<String, dynamic>> extractHealthData(String userInput) async {
+  Future<Map<String, dynamic>> extractHealthData(
+    String userInput, {
+    String? healthContext,
+    List<Map<String, String>>? chatHistory,
+  }) async {
     final now = DateTime.now();
     final todayStr = "${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
 
+    // 会話履歴セクションの生成
+    String historySection = "";
+    if (chatHistory != null && chatHistory.isNotEmpty) {
+      historySection = "\n【直近の会話履歴（文脈理解用）】:\n";
+      for (var msg in chatHistory) {
+        final sender = msg['isUser'] == 'true' ? 'ユーザー' : 'AI';
+        historySection += "- $sender: ${msg['text']}\n";
+      }
+    }
+
+    // 健康履歴コンテキストセクションの生成
+    String contextSection = "";
+    if (healthContext != null && healthContext.trim().isNotEmpty) {
+      contextSection = "\n$healthContext\n";
+    }
+
     final prompt = """
 現在の日付（基準日）: $todayStr
-ユーザーの入力テキストから健康情報を抽出し、AI Health Coachとしての寄り添いメッセージと共に指定されたJSONフォーマットのみを出力してください。マークダウンブロック（```json）は含めないでください。
+$contextSection$historySection
+ユーザーの入力テキストに対して、AI Health Coachとして温かく親切に応答し、指定されたJSONフォーマットのみを出力してください。マークダウンブロック（```json）は含めないでください。
 
 【抽出および応答指示】
 1. date: 記録対象の日付（"YYYY-MM-DD"形式の文字列）。入力テキスト中に「昨日」「一昨日」「9月8日」「2026/09/08」「3日前」などの日付表現がある場合は、基準日（$todayStr）から正確に計算してその日付を設定してください。日付の指定が全くない場合は null。
-2. reply: ユーザーの症状、体調、運動・トレーニング、お薬の服用に対して、AIヘルスコーチとして寄り添う温かい共感やアドバイス、励ましのメッセージ（2〜3文程度、自然で親切な日本語）。
-   - 否定や取り消し（例:「頭痛も肩こりもないよ」）に対しては、「頭痛や肩こりはないのですね！安心いたしました。記録から症状を取り消し、お薬の服用のみの状態に修正いたしました。」のように訂正を受け止めたメッセージにしてください。
-   - 定期服薬の報告に対しては、「お薬の服用記録をつけました。毎日しっかり続けられていて素晴らしいです！」のように寄り添ってください。
-3. condition_score: 体調スコア (1-10の整数。ユーザーが数値を指定している場合はその値。ユーザーが「頭痛がひどい」「熱がある」など明示的に不調を訴えている場合のみ3〜4などを推定。不調の訴えがない場合や否定している場合は不当にスコアを下げず、null または 7〜8 としてください)。
+2. reply: ユーザーの入力・質問・相談・健康報告に対して、AIヘルスコーチとして寄り添う親切・丁寧で温かいメッセージ（2〜4文程度、自然な日本語）。
+   - 【最重要・過去データへの質問・相談・振り返りへの対応】:
+     ユーザーが「先月の頭痛は何回あった？」「最近の私の体調はどう？」「いつからミグシスを飲んでる？」「体重の変化は？」「先週ナラトリプタン何回飲んだ？」「栗田皮フ科のお薬は何？」のように、過去の健康データやお薬手帳の内容について質問・相談・集計・比較を求めている場合：
+     上記【ユーザーの登録済み健康データ・お薬手帳コンテキスト】のデータを正確に集計・照合し、具体的な日数・回数・日付・推移を交えて親切かつ的確に答えてください。
+     ※この「質問・問い合わせ」のみの場合は、今日の健康データとして誤記録されないよう、必ず下記の通り symptoms や medications、condition_score 等は空（[] または null）にしてください。
+   - 【日常服薬や体調報告への寄り添い】:
+     「エペリゾンを飲みました」等の報告に対しては、過去の服薬履歴や処方箋データを踏まえ、「いつも服用されているエペリゾンですね！しっかり記録いたしました」「今週は頭痛の報告が2回目ですね、無理なさらないでくださいね」のように文脈を理解した温かいメッセージにしてください。
+   - 【否定や取り消しへの対応】:
+     「頭痛も肩こりもないよ」などに対しては、「頭痛や肩こりはないのですね！安心いたしました。記録から症状を取り消し、お薬の服用のみの状態に修正いたしました。」のように訂正を受け止めたメッセージにしてください。
+3. condition_score: 体調スコア (1-10の整数。ユーザーが数値を指定している場合はその値。ユーザーが「頭痛がひどい」「熱がある」など明示的に不調を訴えている場合のみ3〜4などを推定。質問のみの場合や不調の訴えがない場合は不当にスコアを下げず、null または 7〜8 としてください)。
 4. symptoms: 症状のリスト (文字列の配列、なければ空配列 []。例: ["頭痛"])
    - 【最重要・厳禁ルール】: ユーザー本人が「頭痛がする」「肩がこる」「だるい」など、直接・明示的に自覚症状を訴えた場合のみ抽出してください。
-   - 【禁止事項】: 服用した薬（例: ミグシス、エペリゾン、川芎茶調散、降圧剤、ビタミン剤等）の効能・適応症から推測して、「薬を飲んだからこの症状があるはずだ」と勝手に症状を作り出して記録することは絶対に禁止です（定期服薬や予防薬であるため、症状がない場合が多いため）。薬を飲んだとだけ言っている場合は必ず symptoms は [] にしてください。
-5. remove_symptoms: ユーザーが「頭痛もない」「肩こりもない」「痛くない」「熱はない」「取り消して」「間違えた」「治った」など、症状を否定・取り消し・解除した症状のリスト（文字列の配列、なければ空配列 []。例: ["頭痛", "肩こり"]）。
+   - 【質問時のルール】: ユーザーが過去の症状について質問しているだけの場合（例:「先月頭痛は何回あった？」）は、今日の症状ではないため symptoms は必ず [] にしてください。
+   - 【禁止事項】: 服用した薬（例: ミグシス、エペリゾン、川芎茶調散、降圧剤、ビタミン剤等）の効能・適応症から推測して、「薬を飲んだからこの症状があるはずだ」と勝手に症状を作り出して記録することは絶対に禁止です。
+5. remove_symptoms: ユーザーが「頭痛もない」「肩こりもない」「痛くない」「熱はない」「取り消して」「間違えた」「治った」など、症状を否定・取り消し・解除した症状のリスト（文字列の配列、なければ空配列 []）。
 6. clear_all_symptoms: ユーザーが「症状はない」「症状を全部消して」のように全ての症状の取り消しを指示している場合は true、そうでなければ false。
 7. medications: 服用した薬のリスト。各薬は {"name": "薬の名前", "time": "HH:MM"} の形式（時間は24時間表記）。時間が不明な場合は "time": null。なければ空配列 []。
+   - 【質問時のルール】: ユーザーが過去の薬について質問しているだけの場合（例:「先週ナラトリプタン何回飲んだ？」）は、今日飲んだわけではないため medications は必ず [] にしてください。
 8. weight: 体重（数値、kg、不明ならnull）
 9. steps: 歩数（整数、不明ならnull）
 10. bodyFat: 体脂肪率（数値、%、不明ならnull）
 11. bmi: BMI（数値、不明なら計算するかnull）
 12. bmr: 基礎代謝（整数、kcal、不明ならnull）
-13. calories: 消費カロリー（整数、kcal、アクティブと安静時の合計など、不明ならnull）
+13. calories: 消費カロリー（整数、kcal、不明ならnull）
 14. sleepHours: 睡眠時間（数値、時間、例: 7.5、不明ならnull）
 15. workouts: 筋トレなどの運動リスト。各運動は {"name": "種目名", "weight": 重さ(kg, 数値), "reps": 回数(整数), "sets": セット数(整数)}。不明な数値項目は0。なければ空配列 []。
 16. prescription: 処方箋・医療機関での処方情報がある場合のみ以下のオブジェクト（なければnull）。
@@ -226,14 +255,37 @@ class GeminiService {
     return 'image/jpeg';
   }
 
-  Future<Map<String, dynamic>> extractHealthDataFromImage(List<int> imageBytes, String mimeType, {String? extraInput}) async {
+  Future<Map<String, dynamic>> extractHealthDataFromImage(
+    List<int> imageBytes,
+    String mimeType, {
+    String? extraInput,
+    String? healthContext,
+    List<Map<String, String>>? chatHistory,
+  }) async {
     final effectiveMimeType = resolveMimeType(imageBytes, mimeType);
     final now = DateTime.now();
     final todayStr = "${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
 
+    // 会話履歴セクションの生成
+    String historySection = "";
+    if (chatHistory != null && chatHistory.isNotEmpty) {
+      historySection = "\n【直近の会話履歴（文脈理解用）】:\n";
+      for (var msg in chatHistory) {
+        final sender = msg['isUser'] == 'true' ? 'ユーザー' : 'AI';
+        historySection += "- $sender: ${msg['text']}\n";
+      }
+    }
+
+    // 健康履歴コンテキストセクションの生成
+    String contextSection = "";
+    if (healthContext != null && healthContext.trim().isNotEmpty) {
+      contextSection = "\n$healthContext\n";
+    }
+
     final prompt = '''
-あなたはプロの医療・健康管理AIアシスタントです。
+あなたはお薬手帳と健康管理に精通したプロのAIヘルスコーチです。
 現在の日付（基準日）: $todayStr
+$contextSection$historySection
 画像から「処方箋・薬袋・お薬手帳のQRコード」および「体重計・体組成計の液晶画面・ヘルスケア測定アプリのスクリーンショット（体重、体脂肪率、BMI、骨量、筋肉量、基礎代謝、歩数等）」の情報を高精度に抽出し、以下のJSONフォーマットのみで返してください。
 
 【読み取り指示】

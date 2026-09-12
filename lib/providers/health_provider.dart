@@ -324,6 +324,117 @@ class HealthProvider with ChangeNotifier {
     return filtered;
   }
 
+  /// AIヘルスコーチ向けに、全期間の健康記録・お薬手帳の集約コンテキストテキストを生成
+  String buildAiHealthContext() {
+    final sb = StringBuffer();
+    sb.writeln('【ユーザーの登録済み健康データ・お薬手帳コンテキスト】');
+    sb.writeln('※以下はアプリ内に保存されているユーザーの実データです。過去の体調・お薬・処方箋に関する質問や会話の参照情報として活用してください。');
+
+    // 1. お薬手帳・処方箋サマリー
+    if (_prescriptions.isNotEmpty) {
+      sb.writeln('\n▼ お薬手帳・処方箋一覧 (${_prescriptions.length}件):');
+      for (var p in _prescriptions) {
+        final dateStr = '${p.date.year}/${p.date.month}/${p.date.day}';
+        final medList = p.medications.map((m) {
+          final eff = m.efficacy != null && m.efficacy!.isNotEmpty ? '（効能: ${m.efficacy}）' : '';
+          return '${m.name} [${m.dosage.replaceAll("\n", " ")}]$eff';
+        }).join('、');
+        sb.writeln('- $dateStr ${p.hospitalName ?? "医療機関"}${p.department != null ? "(${p.department})" : ""}: $medList');
+      }
+    }
+
+    if (_records.isEmpty) {
+      sb.writeln('\n（※過去の体調・服薬記録はまだ登録されていません）');
+      return sb.toString();
+    }
+
+    // 2. 全期間の月別統計サマリー
+    final recordsByMonth = <String, List<HealthRecord>>{};
+    for (var r in _records) {
+      final key = '${r.date.year}年${r.date.month}月';
+      recordsByMonth.putIfAbsent(key, () => []).add(r);
+    }
+
+    sb.writeln('\n▼ 月別統計サマリー (全${recordsByMonth.length}ヶ月分):');
+    for (var entry in recordsByMonth.entries) {
+      final mKey = entry.key;
+      final mRecords = entry.value;
+
+      // 平均スコア
+      final scores = mRecords.map((r) => r.conditionScore).whereType<int>().toList();
+      final avgScore = scores.isNotEmpty
+          ? (scores.reduce((a, b) => a + b) / scores.length).toStringAsFixed(1)
+          : '-';
+
+      // 症状の集計
+      final symptomCounts = <String, int>{};
+      for (var r in mRecords) {
+        for (var s in r.symptoms) {
+          symptomCounts[s] = (symptomCounts[s] ?? 0) + 1;
+        }
+      }
+      final symptomSummary = symptomCounts.isNotEmpty
+          ? symptomCounts.entries.map((e) => '${e.key}(${e.value}日)').join(', ')
+          : '記録なし';
+
+      // 服薬の集計（正規化名）
+      final medCounts = <String, int>{};
+      for (var r in mRecords) {
+        final dayMeds = <String>{};
+        for (var m in r.medications) {
+          final canon = MedicationNormalizer.normalize(m.name);
+          dayMeds.add(canon.isNotEmpty ? canon : m.name);
+        }
+        for (var mName in dayMeds) {
+          medCounts[mName] = (medCounts[mName] ?? 0) + 1;
+        }
+      }
+      final medSummary = medCounts.isNotEmpty
+          ? medCounts.entries.map((e) => '${e.key}(${e.value}日)').join(', ')
+          : '服薬なし';
+
+      // 体重
+      final weights = mRecords.map((r) => r.weight).whereType<double>().toList();
+      final weightSummary = weights.isNotEmpty
+          ? '最小${weights.reduce((a, b) => a < b ? a : b)}kg〜最大${weights.reduce((a, b) => a > b ? a : b)}kg (平均${(weights.reduce((a, b) => a + b) / weights.length).toStringAsFixed(1)}kg)'
+          : '-';
+
+      sb.writeln('- $mKey: 記録${mRecords.length}日分 | 平均体調スコア: $avgScore/10 | 症状: $symptomSummary | 服薬: $medSummary | 体重: $weightSummary');
+    }
+
+    // 3. 直近90日間の日別コンパクト記録（日付降順/新しい順）
+    final sortedRecords = [..._records]..sort((a, b) => b.date.compareTo(a.date));
+    final recentRecords = sortedRecords.take(90).toList();
+
+    sb.writeln('\n▼ 直近の日別記録 (最新${recentRecords.length}日分、新しい順):');
+    for (var r in recentRecords) {
+      final dateStr = '${r.date.year}-${r.date.month.toString().padLeft(2, '0')}-${r.date.day.toString().padLeft(2, '0')}';
+      final parts = <String>[];
+      if (r.conditionScore != null) parts.add('スコア:${r.conditionScore}/10');
+      if (r.symptoms.isNotEmpty) parts.add('症状:[${r.symptoms.join(",")}]');
+      if (r.medications.isNotEmpty) {
+        final mNames = r.medications
+            .map((m) => m.time != null && m.time != '処方' ? '${m.name}(${m.time})' : m.name)
+            .join(",");
+        parts.add('服薬:[$mNames]');
+      }
+      if (r.weight != null) parts.add('体重:${r.weight}kg');
+      if (r.bodyFat != null) parts.add('体脂肪:${r.bodyFat}%');
+      if (r.sleepHours != null) parts.add('睡眠:${r.sleepHours}h');
+      if (r.steps != null) parts.add('歩数:${r.steps}歩');
+      if (r.workouts.isNotEmpty) {
+        final wList = r.workouts
+            .map((w) => '${w.name} ${w.weight}kg×${w.reps}回×${w.sets}set')
+            .join(",");
+        parts.add('運動:[$wList]');
+      }
+
+      sb.writeln('- $dateStr: ${parts.join(" | ")}');
+    }
+
+    return sb.toString();
+  }
+
   // --- ローカルバックアップ用ヘルパー ---
 
   /// 全データを整形済みJSON文字列としてエクスポート

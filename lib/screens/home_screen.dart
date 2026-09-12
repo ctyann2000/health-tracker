@@ -114,6 +114,24 @@ class _HomeScreenState extends State<HomeScreen> {
     _controller.clear();
 
     try {
+      final healthProvider = Provider.of<HealthProvider>(context, listen: false);
+      final healthContext = healthProvider.buildAiHealthContext();
+
+      // 直近の会話履歴（最大6件: 3往復程度）を抽出
+      final chatHistory = <Map<String, String>>[];
+      final startIdx = _messages.length > 7 ? _messages.length - 7 : 0;
+      // 今回送信した最新メッセージの直前までを含める
+      for (int i = startIdx; i < _messages.length - 1; i++) {
+        final m = _messages[i];
+        final text = (m['text'] as String?) ?? '';
+        if (text.isNotEmpty && !text.startsWith("エラーが発生しました")) {
+          chatHistory.add({
+            'isUser': (m['isUser'] == true).toString(),
+            'text': text,
+          });
+        }
+      }
+
       Map<String, dynamic> result;
       if (imageBytesToProcess != null) {
         // 画像内の処方QRコード・お薬手帳バーコードを自動検出
@@ -135,7 +153,9 @@ class _HomeScreenState extends State<HomeScreen> {
         result = await _geminiService.extractHealthDataFromImage(
           imageBytesToProcess, 
           imageToProcess?.mimeType ?? 'image/jpeg', 
-          extraInput: combinedExtra
+          extraInput: combinedExtra,
+          healthContext: healthContext,
+          chatHistory: chatHistory,
         );
 
         // QRコードが検出されたのにAI抽出で薬品・処方が漏れていた場合のフォールバック補完
@@ -155,7 +175,11 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         }
       } else {
-        result = await _geminiService.extractHealthData(messageText);
+        result = await _geminiService.extractHealthData(
+          messageText,
+          healthContext: healthContext,
+          chatHistory: chatHistory,
+        );
       }
       if (mounted) {
         if (result.containsKey('error')) {
@@ -213,9 +237,15 @@ class _HomeScreenState extends State<HomeScreen> {
               record.sleepHours != null ||
               (result['prescription'] != null && result['prescription'] is Map);
 
+          final coachReply = (result['reply'] as String?)?.trim() ?? "";
+
           if (!hasNewData && !hasRemoval) {
+            // 過去データの質問や一般的な相談などで、新規健康データの登録・更新がない場合
+            final replyText = coachReply.isNotEmpty
+                ? coachReply
+                : "AI: ご入力いただいた内容を確認いたしました。健康データ（症状・お薬・測定値など）の新規記録はありませんでした。";
             setState(() {
-              _messages.add({"text": "AI: 画像やテキストから、健康の記録を見つけることができませんでした。", "isUser": false});
+              _messages.add({"text": replyText, "isUser": false});
             });
           } else {
             final healthProvider = Provider.of<HealthProvider>(context, listen: false);
@@ -245,8 +275,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 debugPrint('Prescription parse error: $e');
               }
             }
-
-            final coachReply = (result['reply'] as String?)?.trim() ?? "";
             
             final List<String> summaryLines = [];
             final now = DateTime.now();
