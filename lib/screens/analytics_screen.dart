@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../providers/health_provider.dart';
 import '../models/health_record.dart';
 import '../utils/workout_analyzer.dart';
+import '../utils/medication_normalizer.dart';
 import '../widgets/edit_health_record_dialog.dart';
 
 class AnalyticsScreen extends StatefulWidget {
@@ -481,27 +482,92 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  // --- お薬手帳ウィジェット ---
+  // --- お薬手帳（服薬記録）ウィジェット ---
   Widget _buildMedicationAdherence(List<HealthRecord> records) {
-    // 選択された月の全薬種を抽出
-    final Set<String> uniqueMeds = {};
+    final healthProvider = Provider.of<HealthProvider>(context, listen: false);
+    final presMedNames = healthProvider.prescriptions
+        .expand((p) => p.medications.map((m) => m.name))
+        .toList();
+
+    // 選択された月の全薬種をMedicationNormalizerでグループ化（同一薬を統合）
+    final List<_MedAdherenceGroup> groups = [];
+
     for (var r in records) {
       for (var m in r.medications) {
-        uniqueMeds.add(m.name.trim());
+        final raw = m.name.trim();
+        if (raw.isEmpty) continue;
+
+        final groupIndex = groups.indexWhere((g) =>
+            MedicationNormalizer.isSameMedication(g.canonicalName, raw, presMedNames) ||
+            g.rawNames.any((rn) => MedicationNormalizer.isSameMedication(rn, raw, presMedNames)));
+
+        if (groupIndex >= 0) {
+          groups[groupIndex].rawNames.add(raw);
+        } else {
+          final canon = MedicationNormalizer.normalize(raw);
+          // 手帳の処方薬リストに対応する正式名称があれば探す
+          String? formalName;
+          for (var pName in presMedNames) {
+            if (MedicationNormalizer.isSameMedication(canon, pName, presMedNames)) {
+              formalName = pName;
+              break;
+            }
+          }
+
+          final mainName = canon.isNotEmpty ? canon : raw;
+          groups.add(_MedAdherenceGroup(
+            canonicalName: mainName,
+            rawNames: {raw},
+            formalPrescriptionName: (formalName != null && formalName != mainName) ? formalName : null,
+          ));
+        }
       }
     }
+
+    // 表示順の安定化（名前順）
+    groups.sort((a, b) => a.canonicalName.compareTo(b.canonicalName));
 
     final dateFormats = records.map((r) => DateFormat('M/d').format(r.date)).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: uniqueMeds.map((medName) {
+      children: groups.map((group) {
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 8.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(medName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  Text(
+                    group.canonicalName,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  if (group.formalPrescriptionName != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF00A86B).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: const Color(0xFF00A86B).withValues(alpha: 0.25),
+                          width: 0.5,
+                        ),
+                      ),
+                      child: Text(
+                        group.formalPrescriptionName!,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF007944),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -509,8 +575,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 children: records.asMap().entries.map((entry) {
                   int idx = entry.key;
                   HealthRecord r = entry.value;
-                  bool taken = r.medications.any((m) => m.name.trim() == medName);
-                  
+                  // グループ内のいずれかの薬品名または代表名に合致すれば服用あり
+                  bool taken = r.medications.any((m) {
+                    final mRaw = m.name.trim();
+                    return group.rawNames.contains(mRaw) ||
+                        MedicationNormalizer.isSameMedication(group.canonicalName, mRaw, presMedNames);
+                  });
+
                   return Column(
                     children: [
                       Container(
@@ -1729,4 +1800,17 @@ class _WeightFatChartCardState extends State<WeightFatChartCard> {
       ),
     );
   }
+}
+
+/// お薬手帳の服薬グループ（同一薬品を統合して管理）
+class _MedAdherenceGroup {
+  final String canonicalName;
+  final Set<String> rawNames;
+  final String? formalPrescriptionName;
+
+  _MedAdherenceGroup({
+    required this.canonicalName,
+    required this.rawNames,
+    this.formalPrescriptionName,
+  });
 }

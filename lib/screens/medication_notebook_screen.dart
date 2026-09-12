@@ -13,6 +13,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/debug_log_service.dart';
 import '../utils/medication_efficacy_helper.dart';
+import '../utils/medication_normalizer.dart';
 
 /// 本格処方・お薬手帳画面
 class MedicationNotebookScreen extends StatefulWidget {
@@ -1388,18 +1389,35 @@ class _MedicationNotebookScreenState extends State<MedicationNotebookScreen> {
                   // お薬手帳に追加
                   healthProvider.addPrescription(enrichedRecord);
 
-                  // 今日の服薬記録にも反映
+                  // 今日の服薬記録にも反映（既存の服薬と重複しないよう正規化して安全追加）
                   if (addToTodayMeds && record.medications.isNotEmpty) {
                     final today = DateTime.now();
-                    final todayMeds = record.medications.map((m) {
-                      return Medication(name: m.name, time: '処方');
-                    }).toList();
-                    healthProvider.addRecord(
-                      HealthRecord(
-                        date: today,
-                        medications: todayMeds,
-                      ),
-                    );
+                    final todayRecord = healthProvider.getRecordForDate(today);
+                    final existingMeds = todayRecord?.medications ?? [];
+                    final presMedNames = record.medications.map((m) => m.name).toList();
+
+                    final todayMeds = <Medication>[];
+                    for (var m in record.medications) {
+                      // 既に今日の記録に同一薬（正規化名一致）が存在していれば重複追加を防止
+                      final alreadyTaken = existingMeds.any((ex) =>
+                          MedicationNormalizer.isSameMedication(ex.name, m.name, presMedNames));
+                      if (!alreadyTaken) {
+                        final canon = MedicationNormalizer.normalize(m.name);
+                        todayMeds.add(Medication(
+                          name: canon.isNotEmpty ? canon : m.name,
+                          time: '処方',
+                        ));
+                      }
+                    }
+
+                    if (todayMeds.isNotEmpty) {
+                      healthProvider.addRecord(
+                        HealthRecord(
+                          date: today,
+                          medications: todayMeds,
+                        ),
+                      );
+                    }
                   }
 
                   Navigator.pop(ctx);

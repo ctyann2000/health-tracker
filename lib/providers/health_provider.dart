@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/health_record.dart';
 import '../models/prescription_record.dart';
+import '../utils/medication_normalizer.dart';
 
 class HealthProvider with ChangeNotifier {
   List<HealthRecord> _records = [];
@@ -36,6 +37,12 @@ class HealthProvider with ChangeNotifier {
       // 初回起動時: ユーザーの処方箋実例（栗田皮フ科）をサンプルとして初期プリセット
       _prescriptions = getInitialSamplePrescriptions();
       await savePrescriptions();
+    }
+
+    // 3. 既存の服薬記録に同一薬の重複（一般名と正式名など）があれば自動名寄せ・統合
+    final bool sanitized = sanitizeExistingMedications();
+    if (sanitized) {
+      await saveRecords();
     }
 
     _isLoading = false;
@@ -175,11 +182,11 @@ class HealthProvider with ChangeNotifier {
       final newScore = record.conditionScore ?? existing.conditionScore;
       final newSymptoms = {...existing.symptoms, ...record.symptoms}.toList();
       
-      final medsMap = <String, Medication>{};
-      for (var m in [...existing.medications, ...record.medications]) {
-        medsMap['${m.name.trim()}_${m.time}'] = m;
-      }
-      final newMedications = medsMap.values.toList();
+      // 薬品リストをMedicationNormalizerを用いて同一薬を1つに名寄せ統合
+      final newMedications = _sanitizeMedicationsList([
+        ...existing.medications,
+        ...record.medications,
+      ]);
       
       final workoutMap = <String, Workout>{};
       for (var w in [...existing.workouts, ...record.workouts]) {
@@ -210,8 +217,80 @@ class HealthProvider with ChangeNotifier {
         sleepHours: newSleepHours,
       );
     } else {
-      _records.add(record);
+      // 新規レコード追加時も薬品リストを名寄せサニタイズ
+      final sanitizedMeds = _sanitizeMedicationsList(record.medications);
+      _records.add(record.copyWith(medications: sanitizedMeds));
     }
+  }
+
+  /// 薬品リストを名寄せ・重複統合する
+  List<Medication> _sanitizeMedicationsList(List<Medication> meds) {
+    if (meds.isEmpty) return [];
+
+    final presMedNames = _prescriptions
+        .expand((p) => p.medications.map((m) => m.name))
+        .toList();
+    final List<Medication> result = [];
+
+    for (var med in meds) {
+      if (med.name.trim().isEmpty) continue;
+
+      // 既存のリスト内に同一薬が存在するか判定
+      final existIndex = result.indexWhere((r) =>
+          MedicationNormalizer.isSameMedication(r.name, med.name, presMedNames));
+
+      if (existIndex >= 0) {
+        final existing = result[existIndex];
+        // 服薬時間: '処方' は仮ステータスなので、具体的な時間帯（'朝'など）や非'処方'を優先
+        String? mergedTime = existing.time;
+        if (mergedTime == null || mergedTime == '処方') {
+          mergedTime = (med.time != null && med.time != '処方') ? med.time : mergedTime;
+        }
+
+        // 代表名（一般名）に正規化
+        final normExisting = MedicationNormalizer.normalize(existing.name);
+        final normNew = MedicationNormalizer.normalize(med.name);
+        final canonicalName = normExisting.isNotEmpty ? normExisting : normNew;
+
+        result[existIndex] = Medication(
+          name: canonicalName.isNotEmpty ? canonicalName : existing.name,
+          time: mergedTime,
+        );
+      } else {
+        // 新規薬品: 代表名（一般名）に正規化して登録
+        final canonicalName = MedicationNormalizer.normalize(med.name);
+        result.add(Medication(
+          name: canonicalName.isNotEmpty ? canonicalName : med.name.trim(),
+          time: med.time,
+        ));
+      }
+    }
+
+    return result;
+  }
+
+  /// 既存の全レコードをスキャンし、過去の重複・表記ゆれ薬品を自動統合・正規化
+  bool sanitizeExistingMedications() {
+    bool changed = false;
+    for (int i = 0; i < _records.length; i++) {
+      final r = _records[i];
+      if (r.medications.isEmpty) continue;
+
+      final sanitized = _sanitizeMedicationsList(r.medications);
+      if (!_areMedListsEqual(sanitized, r.medications)) {
+        _records[i] = r.copyWith(medications: sanitized);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  bool _areMedListsEqual(List<Medication> a, List<Medication> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i].name != b[i].name || a[i].time != b[i].time) return false;
+    }
+    return true;
   }
 
   // 特定の日付の記録を取得するヘルパー

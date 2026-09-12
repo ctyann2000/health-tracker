@@ -128,4 +128,34 @@ class HealthRecord {
       'sleepHours': sleepHours,
     };
   }
+
+  HealthRecord copyWith({
+    DateTime? date,
+    int? conditionScore,
+    List<String>? symptoms,
+    List<Medication>? medications,
+    List<Workout>? workouts,
+    double? weight,
+    int? steps,
+    double? bodyFat,
+    double? bmi,
+    int? bmr,
+    int? calories,
+    double? sleepHours,
+  }) {
+    return HealthRecord(
+      date: date ?? this.date,
+      conditionScore: conditionScore ?? this.conditionScore,
+      symptoms: symptoms ?? this.symptoms,
+      medications: medications ?? this.medications,
+      workouts: workouts ?? this.workouts,
+      weight: weight ?? this.weight,
+      steps: steps ?? this.steps,
+      bodyFat: bodyFat ?? this.bodyFat,
+      bmi: bmi ?? this.bmi,
+      bmr: bmr ?? this.bmr,
+      calories: calories ?? this.calories,
+      sleepHours: sleepHours ?? this.sleepHours,
+    );
+  }
 }
