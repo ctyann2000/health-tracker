@@ -324,6 +324,102 @@ class HealthProvider with ChangeNotifier {
     return filtered;
   }
 
+  /// 直近30日間の服薬実績およびお薬手帳の処方薬から、服用頻度の高い薬品名の代表名リストを取得
+  List<String> getRecentMonthMeds() {
+    final now = DateTime.now();
+    final startDate = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 30));
+
+    final Map<String, int> medFrequency = {};
+
+    // 1. 直近30日間の服薬実績を集計
+    for (var r in _records) {
+      final rDate = DateTime(r.date.year, r.date.month, r.date.day);
+      if (!rDate.isBefore(startDate)) {
+        for (var m in r.medications) {
+          final canonical = MedicationNormalizer.normalize(m.name);
+          if (canonical.isNotEmpty) {
+            medFrequency[canonical] = (medFrequency[canonical] ?? 0) + 1;
+          }
+        }
+      }
+    }
+
+    // 2. お薬手帳の処方薬も集計に含める
+    for (var p in _prescriptions) {
+      for (var m in p.medications) {
+        final canonical = MedicationNormalizer.normalize(m.name);
+        if (canonical.isNotEmpty) {
+          medFrequency[canonical] = (medFrequency[canonical] ?? 0) + 1;
+        }
+      }
+    }
+
+    // 頻度降順でソート
+    final sortedMeds = medFrequency.keys.toList()
+      ..sort((a, b) => medFrequency[b]!.compareTo(medFrequency[a]!));
+
+    // 実績が少ない場合の代表的・常用候補（重複なく末尾に補完）
+    final defaultCandidates = [
+      'エペリゾン',
+      'ミグシス',
+      'ナラトリプタン',
+      'ロキソプロフェン',
+      '川芎茶調散',
+      'ヒルドイド',
+      'レボセチリジン',
+      'カロナール',
+    ];
+
+    for (var def in defaultCandidates) {
+      if (!sortedMeds.contains(def)) {
+        sortedMeds.add(def);
+      }
+    }
+
+    return sortedMeds;
+  }
+
+  /// 直近30日間の症状履歴から、頻度の高い症状名リストを取得
+  List<String> getRecentMonthSymptoms() {
+    final now = DateTime.now();
+    final startDate = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 30));
+
+    final Map<String, int> symptomFreq = {};
+
+    for (var r in _records) {
+      final rDate = DateTime(r.date.year, r.date.month, r.date.day);
+      if (!rDate.isBefore(startDate)) {
+        for (var s in r.symptoms) {
+          final clean = s.trim();
+          if (clean.isNotEmpty) {
+            symptomFreq[clean] = (symptomFreq[clean] ?? 0) + 1;
+          }
+        }
+      }
+    }
+
+    final sorted = symptomFreq.keys.toList()
+      ..sort((a, b) => symptomFreq[b]!.compareTo(symptomFreq[a]!));
+
+    final defaultCandidates = [
+      '頭痛',
+      '肩こり',
+      '首の痛み',
+      '倦怠感・だるさ',
+      'めまい',
+      '胃痛・もたれ',
+      '腰痛',
+    ];
+
+    for (var def in defaultCandidates) {
+      if (!sorted.contains(def)) {
+        sorted.add(def);
+      }
+    }
+
+    return sorted;
+  }
+
   /// AIヘルスコーチ向けに、全期間の健康記録・お薬手帳の集約コンテキストテキストを生成
   String buildAiHealthContext() {
     final sb = StringBuffer();
@@ -339,7 +435,8 @@ class HealthProvider with ChangeNotifier {
           final eff = m.efficacy != null && m.efficacy!.isNotEmpty ? '（効能: ${m.efficacy}）' : '';
           return '${m.name} [${m.dosage.replaceAll("\n", " ")}]$eff';
         }).join('、');
-        sb.writeln('- $dateStr ${p.hospitalName ?? "医療機関"}${p.department != null ? "(${p.department})" : ""}: $medList');
+        final hospital = p.hospitalName.isNotEmpty ? p.hospitalName : "医療機関";
+        sb.writeln('- $dateStr $hospital${p.department != null ? "(${p.department})" : ""}: $medList');
       }
     }
 

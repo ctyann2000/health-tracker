@@ -22,6 +22,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _controller = TextEditingController();
+  final ScrollController _homeScrollController = ScrollController();
+  final ScrollController _chatScrollController = ScrollController();
   final GeminiService _geminiService = GeminiService();
   final PrescriptionQrService _qrService = PrescriptionQrService();
   final ImagePicker _picker = ImagePicker();
@@ -31,6 +33,32 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<Map<String, dynamic>> _messages = [
     {"text": "こんにちは！今日の体調や、服用したお薬、運動の記録などを教えてください。処方箋やQRコード、体重計の画面や測定アプリのスクショを添付することもできます。", "isUser": false}
   ];
+
+  // クイック記録（ワンタッチ送信）用状態
+  int? _quickConditionScore = 8; // デフォルト好調(8)
+  final Set<String> _quickSelectedSymptoms = {};
+  bool _quickNoSymptoms = true;
+  final Set<String> _quickSelectedMeds = {};
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _homeScrollController.dispose();
+    _chatScrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToChatBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_chatScrollController.hasClients) {
+        _chatScrollController.animateTo(
+          _chatScrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
 
   Future<void> _pickImage(ImageSource source) async {
     try {
@@ -93,12 +121,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _sendMessage() async {
-    final messageText = _controller.text;
+  Future<void> _sendMessage({String? customText}) async {
+    final messageText = (customText ?? _controller.text).trim();
     final imageBytesToProcess = _selectedImageBytes;
     final imageToProcess = _selectedImage;
     
-    if (messageText.trim().isEmpty && imageBytesToProcess == null) return;
+    if (messageText.isEmpty && imageBytesToProcess == null) return;
     
     setState(() {
       _messages.add({
@@ -111,7 +139,10 @@ class _HomeScreenState extends State<HomeScreen> {
       _selectedImage = null;
       _selectedImageBytes = null; // 送信後に選択をクリア
     });
-    _controller.clear();
+    if (customText == null) {
+      _controller.clear();
+    }
+    _scrollToChatBottom();
 
     try {
       final healthProvider = Provider.of<HealthProvider>(context, listen: false);
@@ -330,6 +361,7 @@ class _HomeScreenState extends State<HomeScreen> {
             setState(() {
               _messages.add({"text": fullMessage, "isUser": false});
             });
+            _scrollToChatBottom();
           }
         }
       }
@@ -338,6 +370,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _messages.add({"text": "エラーが発生しました。", "isUser": false});
         });
+        _scrollToChatBottom();
       }
     } finally {
       if (mounted) {
@@ -346,6 +379,103 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     }
+  }
+
+  void _submitQuickRecord() {
+    if (_quickConditionScore == null && _quickSelectedMeds.isEmpty && _quickSelectedSymptoms.isEmpty && !_quickNoSymptoms) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('体調スコア、症状、またはお薬を選択してください。'),
+          backgroundColor: Colors.orangeAccent,
+        ),
+      );
+      return;
+    }
+
+    final List<String> parts = [];
+
+    // 服薬部分
+    if (_quickSelectedMeds.isNotEmpty) {
+      parts.add("${_quickSelectedMeds.join('、')}を服用しました。");
+    }
+
+    // 体調スコア部分
+    if (_quickConditionScore != null) {
+      String desc = "";
+      if (_quickConditionScore! >= 9) {
+        desc = "（絶好調）";
+      } else if (_quickConditionScore! >= 7) {
+        desc = "（好調）";
+      } else if (_quickConditionScore! >= 5) {
+        desc = "（普通）";
+      } else if (_quickConditionScore! >= 3) {
+        desc = "（不調）";
+      } else {
+        desc = "（つらい）";
+      }
+      parts.add("今日の体調スコアは$_quickConditionScore/10$descです。");
+    }
+
+    // 症状部分
+    if (_quickNoSymptoms || _quickSelectedSymptoms.isEmpty) {
+      parts.add("特に気になる症状はありません。");
+    } else {
+      parts.add("症状: ${_quickSelectedSymptoms.join('、')}。");
+    }
+
+    final fullText = parts.join(' ');
+
+    // クイックパネルの選択状態をリセット
+    setState(() {
+      _quickSelectedMeds.clear();
+      _quickSelectedSymptoms.clear();
+      _quickNoSymptoms = true;
+    });
+
+    _sendMessage(customText: fullText);
+
+    // 送信後、チャットがよく見える位置へスムーズスクロール
+    if (_homeScrollController.hasClients) {
+      _homeScrollController.animateTo(
+        220,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  String _getQuickButtonLabel() {
+    final medCount = _quickSelectedMeds.length;
+    if (medCount > 0) {
+      return '選択したお薬($medCount件)と体調を記録・送信';
+    }
+    return '選択した内容で体調を記録・送信';
+  }
+
+  Widget _buildScoreChip(int score, String label) {
+    final isSelected = _quickConditionScore == score;
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      selectedColor: Colors.indigo.shade100,
+      labelStyle: TextStyle(
+        fontSize: 12,
+        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        color: isSelected ? Colors.indigo.shade900 : Colors.black87,
+      ),
+      backgroundColor: Colors.grey.shade100,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: isSelected ? Colors.indigo.shade300 : Colors.transparent,
+        ),
+      ),
+      onSelected: (selected) {
+        setState(() {
+          _quickConditionScore = selected ? score : null;
+        });
+      },
+    );
   }
 
   @override
@@ -383,7 +513,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         child: SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
+            controller: _homeScrollController,
+            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: Column(
               children: [
@@ -407,11 +539,52 @@ class _HomeScreenState extends State<HomeScreen> {
                 // Middle Row: Status Windows
                 _buildStatusWindows(context).animate().fade(duration: 400.ms, delay: 150.ms).slideY(begin: 0.1),
                 const SizedBox(height: 12),
-                // Bottom: Integrated Chat
-                Expanded(
-                  child: _buildIntegratedChat(context).animate().fade(duration: 400.ms, delay: 200.ms).slideY(begin: 0.05),
+                // Chat Header & Integrated Chat Area
+                SizedBox(
+                  height: 380,
+                  child: _buildIntegratedChat(context),
+                ).animate().fade(duration: 400.ms, delay: 200.ms).slideY(begin: 0.05),
+                const SizedBox(height: 12),
+                // 下スクロール案内バナー（クイック記録への誘導）
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    if (_homeScrollController.hasClients) {
+                      _homeScrollController.animateTo(
+                        _homeScrollController.position.maxScrollExtent,
+                        duration: const Duration(milliseconds: 500),
+                        curve: Curves.easeOutCubic,
+                      );
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.teal.shade50.withOpacity(0.8),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.teal.shade200.withOpacity(0.6)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.touch_app_rounded, size: 16, color: Colors.teal.shade700),
+                        const SizedBox(width: 6),
+                        Text(
+                          'タッチだけで記録できる「クイック記録」は画面下にあります ↓',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.teal.shade800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 12),
+                // Bottom: Quick Record Panel (ワンタッチ服薬 ＆ 体調記録)
+                _buildQuickRecordPanel(context).animate().fade(duration: 400.ms, delay: 250.ms).slideY(begin: 0.05),
+                const SizedBox(height: 24),
               ],
             ),
           ),
@@ -712,6 +885,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // Messages list
           Expanded(
             child: ListView.builder(
+              controller: _chatScrollController,
               padding: const EdgeInsets.all(16),
               itemCount: _messages.length,
               itemBuilder: (context, index) {
@@ -885,6 +1059,303 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// ホーム下部に配置する「クイック記録（ワンタッチ服薬 ＆ 体調記録）」パネル
+  Widget _buildQuickRecordPanel(BuildContext context) {
+    final healthProvider = Provider.of<HealthProvider>(context);
+    final recentMeds = healthProvider.getRecentMonthMeds();
+    final recentSymptoms = healthProvider.getRecentMonthSymptoms();
+
+    return _buildGlassContainer(
+      context,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // パネルヘッダー
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.teal.shade300, Colors.teal.shade600],
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.touch_app_rounded, color: Colors.white, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Text(
+                          'クイック記録 (ワンタッチ送信)',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.teal.shade50,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.teal.shade200),
+                          ),
+                          child: Text(
+                            '直近1ヶ月連動',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.teal.shade800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'タッチして送信するだけで、チャットに入力せず瞬時に記録できます',
+                      style: TextStyle(fontSize: 11, color: Colors.black54),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 22, thickness: 0.8),
+
+          // セクション1: 今日の体調スコア
+          Row(
+            children: [
+              const Icon(Icons.sentiment_satisfied_alt_rounded, size: 16, color: Colors.indigoAccent),
+              const SizedBox(width: 6),
+              const Text(
+                '1. 今日の体調スコア',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
+              ),
+              const Spacer(),
+              if (_quickConditionScore != null)
+                Text(
+                  '$_quickConditionScore点 選択中',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.indigoAccent),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: [
+                _buildScoreChip(10, '🌟 絶好調 (10)'),
+                const SizedBox(width: 6),
+                _buildScoreChip(8, '😊 好調 (8)'),
+                const SizedBox(width: 6),
+                _buildScoreChip(6, '😐 普通 (6)'),
+                const SizedBox(width: 6),
+                _buildScoreChip(4, '😣 不調 (4)'),
+                const SizedBox(width: 6),
+                _buildScoreChip(2, '😫 つらい (2)'),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // セクション2: 今日の症状・気になる点
+          Row(
+            children: [
+              const Icon(Icons.healing_rounded, size: 16, color: Colors.deepOrangeAccent),
+              const SizedBox(width: 6),
+              const Text(
+                '2. 気になる症状・不調',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
+              ),
+              const Spacer(),
+              Text(
+                _quickNoSymptoms ? '症状なし' : '${_quickSelectedSymptoms.length}件 選択中',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: _quickNoSymptoms ? Colors.teal : Colors.deepOrangeAccent,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              // 「特に症状なし (快調)」チップ
+              FilterChip(
+                label: const Text('✨ 特に症状なし (快調)'),
+                selected: _quickNoSymptoms,
+                selectedColor: Colors.teal.shade100,
+                checkmarkColor: Colors.teal.shade800,
+                labelStyle: TextStyle(
+                  fontSize: 12,
+                  fontWeight: _quickNoSymptoms ? FontWeight.bold : FontWeight.normal,
+                  color: _quickNoSymptoms ? Colors.teal.shade900 : Colors.black87,
+                ),
+                backgroundColor: Colors.grey.shade100,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(
+                    color: _quickNoSymptoms ? Colors.teal.shade300 : Colors.transparent,
+                  ),
+                ),
+                onSelected: (selected) {
+                  setState(() {
+                    _quickNoSymptoms = true;
+                    _quickSelectedSymptoms.clear();
+                  });
+                },
+              ),
+              // 直近1ヶ月の履歴から抽出した症状チップ
+              ...recentSymptoms.take(8).map((symptom) {
+                final isSelected = _quickSelectedSymptoms.contains(symptom);
+                return FilterChip(
+                  label: Text(symptom),
+                  selected: isSelected,
+                  selectedColor: Colors.deepOrange.shade100,
+                  checkmarkColor: Colors.deepOrange.shade800,
+                  labelStyle: TextStyle(
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    color: isSelected ? Colors.deepOrange.shade900 : Colors.black87,
+                  ),
+                  backgroundColor: Colors.grey.shade100,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(
+                      color: isSelected ? Colors.deepOrange.shade300 : Colors.transparent,
+                    ),
+                  ),
+                  onSelected: (selected) {
+                    setState(() {
+                      if (selected) {
+                        _quickSelectedSymptoms.add(symptom);
+                        _quickNoSymptoms = false;
+                      } else {
+                        _quickSelectedSymptoms.remove(symptom);
+                        if (_quickSelectedSymptoms.isEmpty) {
+                          _quickNoSymptoms = true;
+                        }
+                      }
+                    });
+                  },
+                );
+              }),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          // セクション3: 服用したお薬
+          Row(
+            children: [
+              const Icon(Icons.medication_rounded, size: 16, color: Colors.blueAccent),
+              const SizedBox(width: 6),
+              const Text(
+                '3. 服用したお薬 (タップで選択)',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
+              ),
+              const Spacer(),
+              if (_quickSelectedMeds.isNotEmpty)
+                Text(
+                  '${_quickSelectedMeds.length}種類 選択中',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueAccent),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: recentMeds.take(10).map((med) {
+              final isSelected = _quickSelectedMeds.contains(med);
+              return FilterChip(
+                avatar: Icon(
+                  Icons.medication_outlined,
+                  size: 14,
+                  color: isSelected ? Colors.blue.shade900 : Colors.blueGrey,
+                ),
+                label: Text(med),
+                selected: isSelected,
+                selectedColor: Colors.blue.shade100,
+                checkmarkColor: Colors.blue.shade800,
+                labelStyle: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  color: isSelected ? Colors.blue.shade900 : Colors.black87,
+                ),
+                backgroundColor: Colors.grey.shade100,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(
+                    color: isSelected ? Colors.blue.shade400 : Colors.transparent,
+                  ),
+                ),
+                onSelected: (selected) {
+                  setState(() {
+                    if (selected) {
+                      _quickSelectedMeds.add(med);
+                    } else {
+                      _quickSelectedMeds.remove(med);
+                    }
+                  });
+                },
+              );
+            }).toList(),
+          ),
+
+          const SizedBox(height: 20),
+
+          // 送信ボタン
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _submitQuickRecord,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Colors.white,
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+              ),
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.send_rounded, size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          _getQuickButtonLabel(),
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
             ),
           ),
         ],
