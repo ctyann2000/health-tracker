@@ -184,6 +184,18 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         const SizedBox(height: 16),
                       ],
 
+                      // --- 体調不良（症状記録） ---
+                      if (monthRecords.any((r) => r.symptoms.isNotEmpty)) ...[
+                        _buildChartCard(
+                          context: context,
+                          title: '体調不良 (症状記録)',
+                          icon: Icons.sick_outlined,
+                          color: const Color(0xFFFF7043),
+                          child: _buildSymptomAdherence(monthRecords),
+                        ).animate().fade(delay: 250.ms).slideY(begin: 0.05),
+                        const SizedBox(height: 16),
+                      ],
+
                       // --- お薬手帳 ---
                       if (monthRecords.any((r) => r.medications.isNotEmpty)) ...[
                         _buildChartCard(
@@ -479,6 +491,108 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  // --- 体調不良（症状記録）ウィジェット ---
+  Widget _buildSymptomAdherence(List<HealthRecord> records) {
+    // 選択された月の全症状とその発生日数を集計
+    final Map<String, int> symptomDayCounts = {};
+    for (var r in records) {
+      final seenToday = <String>{};
+      for (var s in r.symptoms) {
+        final trimmed = s.trim();
+        if (trimmed.isNotEmpty && !seenToday.contains(trimmed)) {
+          seenToday.add(trimmed);
+          symptomDayCounts[trimmed] = (symptomDayCounts[trimmed] ?? 0) + 1;
+        }
+      }
+    }
+
+    // 発生日数が多い順、同数なら五十音順でソート
+    final sortedSymptoms = symptomDayCounts.keys.toList()
+      ..sort((a, b) {
+        final cmp = symptomDayCounts[b]!.compareTo(symptomDayCounts[a]!);
+        if (cmp != 0) return cmp;
+        return a.compareTo(b);
+      });
+
+    final dateFormats = records.map((r) => DateFormat('M/d').format(r.date)).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: sortedSymptoms.map((symptomName) {
+        final daysCount = symptomDayCounts[symptomName] ?? 0;
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  Text(
+                    symptomName,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF7043).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: const Color(0xFFFF7043).withValues(alpha: 0.3),
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Text(
+                      '月間 $daysCount日',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFD84315),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: records.asMap().entries.map((entry) {
+                  int idx = entry.key;
+                  HealthRecord r = entry.value;
+                  bool hasSymptom = r.symptoms.any((s) => s.trim() == symptomName);
+
+                  return Column(
+                    children: [
+                      Container(
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: hasSymptom
+                              ? const Color(0xFFFF7043)
+                              : Colors.grey.withValues(alpha: 0.2),
+                        ),
+                        child: hasSymptom
+                            ? const Icon(Icons.check, size: 13, color: Colors.white)
+                            : null,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(dateFormats[idx], style: const TextStyle(fontSize: 9, color: Colors.black54)),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 
