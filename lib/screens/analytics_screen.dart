@@ -517,7 +517,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         return a.compareTo(b);
       });
 
-    final dateFormats = records.map((r) => DateFormat('M/d').format(r.date)).toList();
+    // 直近12日分を表示対象とする（2行に折り返されるのを防ぐため最新12日分に制限）
+    final displayRecords = records.length > 12 ? records.sublist(records.length - 12) : records;
+    final dateFormats = displayRecords.map((r) => DateFormat('M/d').format(r.date)).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -563,7 +565,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: records.asMap().entries.map((entry) {
+                children: displayRecords.asMap().entries.map((entry) {
                   int idx = entry.key;
                   HealthRecord r = entry.value;
                   bool hasSymptom = r.symptoms.any((s) => s.trim() == symptomName);
@@ -641,7 +643,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     // 表示順の安定化（名前順）
     groups.sort((a, b) => a.canonicalName.compareTo(b.canonicalName));
 
-    final dateFormats = records.map((r) => DateFormat('M/d').format(r.date)).toList();
+    // 直近12日分を表示対象とする（2行に折り返されるのを防ぐため最新12日分に制限）
+    final displayRecords = records.length > 12 ? records.sublist(records.length - 12) : records;
+    final dateFormats = displayRecords.map((r) => DateFormat('M/d').format(r.date)).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -686,7 +690,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: records.asMap().entries.map((entry) {
+                children: displayRecords.asMap().entries.map((entry) {
                   int idx = entry.key;
                   HealthRecord r = entry.value;
                   // グループ内のいずれかの薬品名または代表名に合致すれば服用あり
