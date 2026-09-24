@@ -11,6 +11,7 @@ import 'providers/health_provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:flutter/foundation.dart';
 import 'services/debug_log_service.dart';
+import 'services/step_counter_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -80,6 +81,15 @@ class MainNavigation extends StatefulWidget {
 
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final healthProvider = Provider.of<HealthProvider>(context, listen: false);
+      StepCounterService.instance.init(healthProvider);
+    });
+  }
 
   final List<Widget> _screens = const [
     HomeScreen(),

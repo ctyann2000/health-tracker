@@ -67,6 +67,30 @@ class HealthProvider with ChangeNotifier {
     saveRecords();
   }
 
+  /// 歩数センサーからの自動同期用: 今日の歩数のみを更新
+  void updateTodaySteps(int steps) {
+    if (steps < 0) return;
+    final now = DateTime.now();
+    final index = _records.indexWhere((r) =>
+        r.date.year == now.year &&
+        r.date.month == now.month &&
+        r.date.day == now.day);
+
+    if (index >= 0) {
+      final existing = _records[index];
+      if (existing.steps == steps) return;
+      _records[index] = existing.copyWith(steps: steps);
+    } else {
+      _records.add(HealthRecord(
+        date: DateTime(now.year, now.month, now.day),
+        steps: steps,
+      ));
+      _records.sort((a, b) => a.date.compareTo(b.date));
+    }
+    notifyListeners();
+    saveRecords();
+  }
+
   /// 特定の日付の記録を完全に上書き・更新（編集内容で置換）
   void updateRecord(HealthRecord record) {
     final index = _records.indexWhere((r) =>

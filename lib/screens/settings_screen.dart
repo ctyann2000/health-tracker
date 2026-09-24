@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/health_provider.dart';
 import '../services/gemini_service.dart';
 import '../services/debug_log_service.dart';
+import '../services/step_counter_service.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -105,6 +107,13 @@ class SettingsScreen extends StatelessWidget {
                         ],
                       ),
                     ).animate().fade().slideY(begin: 0.05),
+
+                    const SizedBox(height: 28),
+
+                    // --- セクション: 端末歩数計センサー連携 (Android) ---
+                    _buildSectionHeader('スマホ歩数計センサー連携'),
+                    const SizedBox(height: 10),
+                    _buildStepCounterCard(context).animate().fade().slideY(begin: 0.05),
 
                     const SizedBox(height: 28),
 
@@ -1048,6 +1057,196 @@ class SettingsScreen extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+
+  /// 端末歩数計センサー連携（Androidネイティブ / Web共通対応）カード
+  Widget _buildStepCounterCard(BuildContext context) {
+    if (kIsWeb) {
+      return _buildGlassCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blueGrey.shade100,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.directions_walk_rounded, color: Colors.blueGrey, size: 20),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Webブラウザ版（手動・スクショ記録）',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      Text(
+                        'ブラウザの仕様上、直接の自動センサー計測は制限されています',
+                        style: TextStyle(fontSize: 11, color: Colors.black54),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 20),
+            const Text(
+              'チャットへの「〇〇歩歩いた」というメッセージ入力や、歩数計アプリのスクリーンショット送信で歩数を記録できます。\n\n'
+              'スマートフォンの歩数計センサーから完全自動で取得したい場合は、専用のAndroidアプリ（APK）をインストールしてご利用いただけます。',
+              style: TextStyle(fontSize: 12, color: Colors.black54, height: 1.5),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.teal.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.teal.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.android_rounded, size: 20, color: Colors.teal.shade700),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Androidアプリ版（APK）を導入すると、アプリを開くだけで毎日の歩数が自動反映されます。',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.teal),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Androidネイティブ実行時
+    final stepService = StepCounterService.instance;
+
+    return _buildGlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ValueListenableBuilder<bool>(
+                valueListenable: stepService.isSensorActive,
+                builder: (context, isActive, _) {
+                  return Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: isActive ? Colors.green.shade100 : Colors.amber.shade100,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.directions_walk_rounded,
+                      color: isActive ? Colors.green.shade800 : Colors.amber.shade900,
+                      size: 20,
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Text(
+                          '端末歩数センサー（自動計測）',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        const SizedBox(width: 6),
+                        ValueListenableBuilder<bool>(
+                          valueListenable: stepService.isSensorActive,
+                          builder: (context, isActive, _) {
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isActive ? Colors.green.shade50 : Colors.amber.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isActive ? Colors.green.shade300 : Colors.amber.shade300,
+                                  width: 0.8,
+                                ),
+                              ),
+                              child: Text(
+                                isActive ? '稼働中' : '確認中',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: isActive ? Colors.green.shade800 : Colors.amber.shade900,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    ValueListenableBuilder<String>(
+                      valueListenable: stepService.statusMessage,
+                      builder: (context, msg, _) {
+                        return Text(
+                          msg,
+                          style: const TextStyle(fontSize: 11, color: Colors.black54),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('今日の自動計測歩数', style: TextStyle(fontSize: 11, color: Colors.black54)),
+                  const SizedBox(height: 2),
+                  ValueListenableBuilder<int>(
+                    valueListenable: stepService.todaySteps,
+                    builder: (context, steps, _) {
+                      return Text(
+                        '$steps 歩',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              OutlinedButton.icon(
+                onPressed: () => stepService.retryConnection(),
+                icon: const Icon(Icons.refresh_rounded, size: 16),
+                label: const Text('再接続 / 権限確認', style: TextStyle(fontSize: 11)),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '※端末内蔵のハードウェア歩数計（Step Counter）と連動し、日付が変わると自動で0歩からリセットして計測します。',
+            style: TextStyle(fontSize: 11, color: Colors.black45),
+          ),
+        ],
       ),
     );
   }

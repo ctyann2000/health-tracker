@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy Web and Build Android APK
 
 on:
   push:
@@ -16,6 +16,12 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Setup Java (for Android Build)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -29,7 +35,7 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Build Web
+      - name: Prepare API Key & Build Web
         env:
           KEY_PRIMARY: ${{ secrets.HEALTHAPPAPI }}
           KEY_SECONDARY: ${{ secrets.GEMINI_API_KEY }}
@@ -39,9 +45,10 @@ jobs:
             RAW_KEY="$KEY_SECONDARY"
           fi
           KEY_B64=$(echo -n "$RAW_KEY" | base64 -w 0)
+          echo "KEY_B64=$KEY_B64" >> $GITHUB_ENV
           flutter build web --release --pwa-strategy none --base-href "/health-tracker/" --dart-define=GEMINI_API_KEY_B64="$KEY_B64"
 
-      - name: Remove sensitive assets
+      - name: Remove sensitive assets from Web
         run: |
           rm -f build/web/assets/.env
 
@@ -50,3 +57,30 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./build/web
+
+      - name: Build Android Release APK
+        run: |
+          flutter build apk --release --dart-define=GEMINI_API_KEY_B64="${{ env.KEY_B64 }}"
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: health-tracker-android-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Create or Update GitHub Release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Health Tracker 最新版 (Android APK)"
+          body: |
+            ## Health Tracker Android版 (APK)
+            スマートフォンの歩数計センサー自動連動に対応した最新の Android アプリ (APK) です。
+            
+            ### インストール・更新方法
+            1. 下記の `app-release.apk` をスマートフォンでダウンロードします。
+            2. ファイルを開き、「インストール」または「更新」をタップします。
+            3. 初回起動時に「身体活動のアクセス」を許可すると、今日の歩数が自動で同期されます。
+          files: build/app/outputs/flutter-apk/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
