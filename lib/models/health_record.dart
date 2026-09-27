@@ -1,23 +1,120 @@
 
+class WorkoutSet {
+  final int setNumber;
+  final double weight;
+  final int reps;
+  final bool isCompleted;
+  final String type; // 'normal', 'warmup', 'drop', 'failure'
+
+  WorkoutSet({
+    required this.setNumber,
+    required this.weight,
+    required this.reps,
+    this.isCompleted = false,
+    this.type = 'normal',
+  });
+
+  factory WorkoutSet.fromJson(Map<String, dynamic> json) {
+    return WorkoutSet(
+      setNumber: json['setNumber'] ?? 1,
+      weight: (json['weight'] ?? 0).toDouble(),
+      reps: json['reps'] ?? 0,
+      isCompleted: json['isCompleted'] ?? false,
+      type: json['type'] ?? 'normal',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'setNumber': setNumber,
+      'weight': weight,
+      'reps': reps,
+      'isCompleted': isCompleted,
+      'type': type,
+    };
+  }
+
+  WorkoutSet copyWith({
+    int? setNumber,
+    double? weight,
+    int? reps,
+    bool? isCompleted,
+    String? type,
+  }) {
+    return WorkoutSet(
+      setNumber: setNumber ?? this.setNumber,
+      weight: weight ?? this.weight,
+      reps: reps ?? this.reps,
+      isCompleted: isCompleted ?? this.isCompleted,
+      type: type ?? this.type,
+    );
+  }
+}
+
 class Workout {
   final String name;
   final double weight;
   final int reps;
   final int sets;
+  final List<WorkoutSet> setDetails;
+  final String? memo;
+  final int? restSeconds;
 
   Workout({
     required this.name,
     required this.weight,
     required this.reps,
     required this.sets,
+    this.setDetails = const [],
+    this.memo,
+    this.restSeconds,
   });
 
+  /// 総ボリューム（負荷量 kg）の計算
+  double get totalVolume {
+    if (setDetails.isNotEmpty) {
+      final completed = setDetails.where((s) => s.isCompleted).toList();
+      final target = completed.isNotEmpty ? completed : setDetails;
+      return target.fold(0.0, (sum, s) => sum + (s.weight * s.reps));
+    }
+    return weight * reps * sets;
+  }
+
+  /// 推定1RM (Epley formula: W * (1 + R / 30))
+  double get estimatedOneRepMax {
+    if (setDetails.isNotEmpty) {
+      double max1RM = 0.0;
+      for (var s in setDetails) {
+        if (s.reps > 0) {
+          final rm = s.weight * (1 + s.reps / 30.0);
+          if (rm > max1RM) max1RM = rm;
+        }
+      }
+      if (max1RM > 0) return max1RM;
+    }
+    return reps > 0 ? (weight * (1 + reps / 30.0)) : weight;
+  }
+
   factory Workout.fromJson(Map<String, dynamic> json) {
+    List<WorkoutSet> parsedSets = [];
+    if (json['setDetails'] != null && json['setDetails'] is List) {
+      parsedSets = (json['setDetails'] as List)
+          .map((e) => WorkoutSet.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+
+    final double rawWeight = (json['weight'] ?? 0).toDouble();
+    final int rawReps = json['reps'] ?? 0;
+    final int rawSets = json['sets'] ?? (parsedSets.isNotEmpty ? parsedSets.length : 0);
+
     return Workout(
       name: json['name'] ?? '',
-      weight: (json['weight'] ?? 0).toDouble(),
-      reps: json['reps'] ?? 0,
-      sets: json['sets'] ?? 0,
+      weight: rawWeight,
+      reps: rawReps,
+      sets: rawSets,
+      setDetails: parsedSets,
+      memo: json['memo'],
+      restSeconds: json['restSeconds'],
     );
   }
 
@@ -27,7 +124,30 @@ class Workout {
       'weight': weight,
       'reps': reps,
       'sets': sets,
+      'setDetails': setDetails.map((s) => s.toJson()).toList(),
+      if (memo != null) 'memo': memo,
+      if (restSeconds != null) 'restSeconds': restSeconds,
     };
+  }
+
+  Workout copyWith({
+    String? name,
+    double? weight,
+    int? reps,
+    int? sets,
+    List<WorkoutSet>? setDetails,
+    String? memo,
+    int? restSeconds,
+  }) {
+    return Workout(
+      name: name ?? this.name,
+      weight: weight ?? this.weight,
+      reps: reps ?? this.reps,
+      sets: sets ?? this.sets,
+      setDetails: setDetails ?? this.setDetails,
+      memo: memo ?? this.memo,
+      restSeconds: restSeconds ?? this.restSeconds,
+    );
   }
 }
 

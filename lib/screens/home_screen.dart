@@ -12,6 +12,7 @@ import '../providers/health_provider.dart';
 import '../models/health_record.dart';
 import '../models/prescription_record.dart';
 import '../services/prescription_qr_service.dart';
+import 'workout_session_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -539,6 +540,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 // Middle Row: Status Windows
                 _buildStatusWindows(context).animate().fade(duration: 400.ms, delay: 150.ms).slideY(begin: 0.1),
                 const SizedBox(height: 12),
+                // Hevyスタイル トレーニング記録バナー
+                _buildWorkoutSessionBanner(context).animate().fade(duration: 400.ms, delay: 180.ms).slideY(begin: 0.05),
+                const SizedBox(height: 12),
                 // Chat Header & Integrated Chat Area
                 SizedBox(
                   height: 380,
@@ -800,8 +804,102 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(width: 8),
         Expanded(child: _buildStatusCard(context, '体重', todayRecord?.weight != null ? '${todayRecord!.weight} kg' : '-', Icons.monitor_weight, Colors.blue)),
         const SizedBox(width: 8),
-        Expanded(child: _buildStatusCard(context, '運動状況', _getWorkoutSummary(todayRecord), Icons.directions_run, Colors.orange)),
+        Expanded(
+          child: _buildStatusCard(
+            context,
+            '運動状況',
+            _getWorkoutSummary(todayRecord),
+            Icons.directions_run,
+            Colors.orange,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const WorkoutSessionScreen()),
+              );
+            },
+          ),
+        ),
       ],
+    );
+  }
+
+  /// Hevyスタイルのライブワークアウト記録バナー
+  Widget _buildWorkoutSessionBanner(BuildContext context) {
+    return InkWell(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const WorkoutSessionScreen()),
+        );
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF141E30), Color(0xFF243B55)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.12),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0072FF).withOpacity(0.3),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.fitness_center, color: Color(0xFF00C6FF), size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    '🏋️ トレーニング直接記録 (Hevyスタイル)',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    '種目解説・前回値表示・自動休憩タイマー付き',
+                    style: TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0072FF),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '開始',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                  SizedBox(width: 2),
+                  Icon(Icons.arrow_forward_ios, color: Colors.white, size: 10),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -832,23 +930,34 @@ class _HomeScreenState extends State<HomeScreen> {
     return parts.join('\n');
   }
 
-  Widget _buildStatusCard(BuildContext context, String title, String value, IconData icon, Color color) {
-    return _buildGlassContainer(
-      context,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 14, color: color),
-              const SizedBox(width: 4),
-              Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10, color: Colors.black87), overflow: TextOverflow.ellipsis)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(value, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black54), maxLines: 8, overflow: TextOverflow.ellipsis),
-        ],
+  Widget _buildStatusCard(
+    BuildContext context,
+    String title,
+    String value,
+    IconData icon,
+    Color color, {
+    VoidCallback? onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: _buildGlassContainer(
+        context,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 14, color: color),
+                const SizedBox(width: 4),
+                Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10, color: Colors.black87), overflow: TextOverflow.ellipsis)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(value, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black54), maxLines: 8, overflow: TextOverflow.ellipsis),
+          ],
+        ),
       ),
     );
   }

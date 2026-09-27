@@ -9,6 +9,7 @@ import '../models/health_record.dart';
 import '../utils/workout_analyzer.dart';
 import '../utils/medication_normalizer.dart';
 import '../widgets/edit_health_record_dialog.dart';
+import 'workout_session_screen.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
@@ -159,6 +160,21 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           title: '総負荷量 (ボリューム)',
                           icon: Icons.fitness_center,
                           color: Colors.amber.shade700,
+                          trailing: TextButton.icon(
+                            style: TextButton.styleFrom(
+                              backgroundColor: const Color(0xFF0072FF).withOpacity(0.12),
+                              foregroundColor: const Color(0xFF0072FF),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            ),
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => const WorkoutSessionScreen()),
+                              );
+                            },
+                            icon: const Icon(Icons.add, size: 16),
+                            label: const Text('記録', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                          ),
                           child: _buildVolumeChart(monthRecords),
                         ).animate().fade(delay: 150.ms).slideY(begin: 0.05),
                         const SizedBox(height: 16),
@@ -169,6 +185,45 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           color: Colors.deepOrange,
                           child: _buildMuscleRadarChart(monthRecords),
                         ).animate().fade(delay: 175.ms).slideY(begin: 0.05),
+                        const SizedBox(height: 16),
+                      ] else ...[
+                        _buildChartCard(
+                          context: context,
+                          title: 'トレーニング記録',
+                          icon: Icons.fitness_center,
+                          color: const Color(0xFF0072FF),
+                          trailing: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0072FF),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              elevation: 0,
+                            ),
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => const WorkoutSessionScreen()),
+                              );
+                            },
+                            icon: const Icon(Icons.play_arrow, size: 16),
+                            label: const Text('開始', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                          ),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            alignment: Alignment.center,
+                            child: const Column(
+                              children: [
+                                Icon(Icons.fitness_center, size: 40, color: Colors.black26),
+                                SizedBox(height: 8),
+                                Text(
+                                  '今月のトレーニングデータがまだありません\nHevyスタイルの直接記録機能でトレーニングを開始しましょう！',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: Colors.black54, fontSize: 13, height: 1.4),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ).animate().fade(delay: 150.ms).slideY(begin: 0.05),
                         const SizedBox(height: 16),
                       ],
 
@@ -1129,7 +1184,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
 
 
-  Widget _buildChartCard({required BuildContext context, required String title, required IconData icon, required Color color, required Widget child}) {
+  Widget _buildChartCard({
+    required BuildContext context,
+    required String title,
+    required IconData icon,
+    required Color color,
+    required Widget child,
+    Widget? trailing,
+  }) {
     return _buildGlassContainer(
       context,
       padding: const EdgeInsets.all(20),
@@ -1140,7 +1202,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             children: [
               Icon(icon, size: 20, color: color),
               const SizedBox(width: 8),
-              Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87)),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
+                ),
+              ),
+              if (trailing != null) trailing,
             ],
           ),
           const SizedBox(height: 20),
