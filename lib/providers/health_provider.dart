@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/health_record.dart';
-import '../models/workout_exercise.dart';
 import '../models/prescription_record.dart';
 import '../utils/medication_normalizer.dart';
 
@@ -643,131 +642,6 @@ class HealthProvider with ChangeNotifier {
     _prescriptions = getInitialSamplePrescriptions();
     notifyListeners();
     savePrescriptions();
-  }
-
-  /// ワークアウトセッションを保存（指定日付のレコードにマージ）
-  Future<void> saveWorkoutSession(DateTime date, List<Workout> sessionWorkouts) async {
-    if (sessionWorkouts.isEmpty) return;
-
-    final index = _records.indexWhere((r) =>
-        r.date.year == date.year &&
-        r.date.month == date.month &&
-        r.date.day == date.day);
-
-    if (index >= 0) {
-      final existing = _records[index];
-      // 既存ワークアウトと今回のセッションワークアウトを統合
-      final Map<String, Workout> map = {};
-      for (var w in existing.workouts) {
-        map[w.name] = w;
-      }
-      for (var w in sessionWorkouts) {
-        map[w.name] = w; // 今回のセッション内容で更新または追加
-      }
-      _records[index] = existing.copyWith(workouts: map.values.toList());
-    } else {
-      _records.add(HealthRecord(
-        date: DateTime(date.year, date.month, date.day),
-        workouts: sessionWorkouts,
-      ));
-      _records.sort((a, b) => a.date.compareTo(b.date));
-    }
-
-    notifyListeners();
-    await saveRecords();
-  }
-
-  /// 指定種目の「前回」セット内容を取得
-  List<WorkoutSet>? getPreviousSets(String exerciseName, [DateTime? beforeDate]) {
-    final cutoff = beforeDate ?? DateTime.now();
-    // 日付降順でソートされた過去レコードを探索
-    final pastRecords = _records
-        .where((r) => r.date.isBefore(cutoff) || (r.date.year == cutoff.year && r.date.month == cutoff.month && r.date.day == cutoff.day))
-        .toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
-
-    for (var r in pastRecords) {
-      final match = r.workouts.where((w) {
-        final cleanA = w.name.replaceAll(' ', '').toLowerCase();
-        final cleanB = exerciseName.replaceAll(' ', '').toLowerCase();
-        return cleanA.contains(cleanB) || cleanB.contains(cleanA);
-      }).toList();
-
-      if (match.isNotEmpty) {
-        final w = match.first;
-        if (w.setDetails.isNotEmpty) {
-          return w.setDetails;
-        } else if (w.sets > 0) {
-          // 従来の簡易WorkoutからWorkoutSetを再構築
-          return List.generate(
-            w.sets,
-            (i) => WorkoutSet(
-              setNumber: i + 1,
-              weight: w.weight,
-              reps: w.reps,
-              isCompleted: true,
-            ),
-          );
-        }
-      }
-    }
-    return null;
-  }
-
-  /// 指定種目の全履歴データポイントを取得（推移グラフ・PR用）
-  List<ExerciseHistoryPoint> getExerciseHistory(String exerciseName) {
-    final List<ExerciseHistoryPoint> history = [];
-    final cleanName = exerciseName.replaceAll(' ', '').toLowerCase();
-
-    for (var r in _records) {
-      final matches = r.workouts.where((w) {
-        final n = w.name.replaceAll(' ', '').toLowerCase();
-        return n.contains(cleanName) || cleanName.contains(n);
-      }).toList();
-
-      if (matches.isNotEmpty) {
-        final w = matches.first;
-        List<WorkoutSet> sets = w.setDetails;
-        if (sets.isEmpty && w.sets > 0) {
-          sets = List.generate(
-            w.sets,
-            (i) => WorkoutSet(
-              setNumber: i + 1,
-              weight: w.weight,
-              reps: w.reps,
-              isCompleted: true,
-            ),
-          );
-        }
-
-        double maxWeight = 0;
-        double best1RM = 0;
-        double bestSetVol = 0;
-
-        for (var s in sets) {
-          if (s.weight > maxWeight) maxWeight = s.weight;
-          if (s.reps > 0) {
-            final rm = s.weight * (1 + s.reps / 30.0);
-            if (rm > best1RM) best1RM = rm;
-            final vol = s.weight * s.reps;
-            if (vol > bestSetVol) bestSetVol = vol;
-          }
-        }
-
-        if (maxWeight > 0 || best1RM > 0) {
-          history.add(ExerciseHistoryPoint(
-            date: r.date,
-            maxWeight: maxWeight,
-            best1RM: best1RM,
-            bestSetVolume: bestSetVol,
-            sets: sets,
-          ));
-        }
-      }
-    }
-
-    history.sort((a, b) => a.date.compareTo(b.date));
-    return history;
   }
 
   /// 初期サンプル処方データ（実例：栗田皮フ科・オリーブ薬局・処方薬4種）
