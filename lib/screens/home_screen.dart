@@ -238,7 +238,9 @@ class _HomeScreenState extends State<HomeScreen> {
             conditionScore: result['condition_score'],
             symptoms: List<String>.from(result['symptoms'] ?? []),
             medications: (result['medications'] as List?)
-                    ?.map((e) => e is String ? Medication(name: e) : Medication.fromJson(e as Map<String, dynamic>))
+                    ?.map((e) => e is String
+                        ? Medication.parseFromInput(e)
+                        : Medication.fromJson(e as Map<String, dynamic>))
                     .toList() ??
                 [],
             weight: result['weight'] != null ? (result['weight'] as num).toDouble() : null,
@@ -336,7 +338,11 @@ class _HomeScreenState extends State<HomeScreen> {
               summaryLines.add("お薬手帳: $hNameの処方を登録");
             }
             if (record.medications.isNotEmpty) {
-              final meds = record.medications.map((m) => m.time != null ? "${m.time} ${m.name}" : m.name).join(', ');
+              final meds = record.medications
+                  .map((m) => m.time != null
+                      ? "${m.time} ${m.name} ${m.quantity}錠"
+                      : "${m.name} ${m.quantity}錠")
+                  .join(', ');
               summaryLines.add("お薬: $meds");
             }
             if (record.workouts.isNotEmpty) {
@@ -810,7 +816,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _getMedicationSummary(HealthRecord? record) {
     if (record == null || record.medications.isEmpty) return '-';
-    return record.medications.take(8).map((m) => m.time != null ? '${m.time} ${m.name}' : m.name).join('\n');
+    return record.medications
+        .take(8)
+        .map((m) => m.time != null ? '${m.time} ${m.name} ${m.quantity}錠' : '${m.name} ${m.quantity}錠')
+        .join('\n');
   }
 
   String _getWorkoutSummary(HealthRecord? record) {

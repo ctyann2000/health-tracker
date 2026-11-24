@@ -181,7 +181,7 @@ $contextSection$historySection
    - 【禁止事項】: 服用した薬（例: ミグシス、エペリゾン、川芎茶調散、降圧剤、ビタミン剤等）の効能・適応症から推測して、「薬を飲んだからこの症状があるはずだ」と勝手に症状を作り出して記録することは絶対に禁止です。
 5. remove_symptoms: ユーザーが「頭痛もない」「肩こりもない」「痛くない」「熱はない」「取り消して」「間違えた」「治った」など、症状を否定・取り消し・解除した症状のリスト（文字列の配列、なければ空配列 []）。
 6. clear_all_symptoms: ユーザーが「症状はない」「症状を全部消して」のように全ての症状の取り消しを指示している場合は true、そうでなければ false。
-7. medications: 服用した薬のリスト。各薬は {"name": "薬の名前", "time": "HH:MM"} の形式（時間は24時間表記）。時間が不明な場合は "time": null。なければ空配列 []。
+7. medications: 服用した薬のリスト。各薬は {"name": "薬の名前", "time": "HH:MM", "quantity": 錠数(整数)} の形式（時間は24時間表記）。時間が不明な場合は "time": null。「2錠」「3粒」「2包」など数量の指定があればその整数を quantity に設定し、数量の指定がない場合は必ず 1 を設定してください。同じ薬を朝・昼など複数回飲んだ記述がある場合は合計錠数または複数要素で正確に表現してください。なければ空配列 []。
    - 【質問時のルール】: ユーザーが過去の薬について質問しているだけの場合（例:「先週ナラトリプタン何回飲んだ？」）は、今日飲んだわけではないため medications は必ず [] にしてください。
 8. weight: 体重（数値、kg、不明ならnull）
 9. steps: 歩数（整数、不明ならnull）
@@ -211,7 +211,7 @@ $contextSection$historySection
   "remove_symptoms": [],
   "clear_all_symptoms": false,
   "medications": [
-    {"name": "ミグシス", "time": null}
+    {"name": "ミグシス", "time": null, "quantity": 1}
   ],
   "weight": null,
   "steps": null,
@@ -300,7 +300,7 @@ $contextSection$historySection
    - 歩数があれば steps に格納
    - 消費カロリーがあれば calories に格納
 4. 処方箋や薬袋・お薬手帳の場合:
-   - 薬品名とおおよその服用時間を medications に格納
+   - 薬品名とおおよその服用時間・数量を medications に格納（「2錠」「3粒」「2包」など数量の指定があればその整数を quantity に設定し、数量の指定がない場合は必ず 1 を設定。同じ薬を朝・昼など複数回飲んだ記述がある場合は合計錠数または複数要素で表現）
    - ユーザーのコメントや処方箋に病名・自覚症状が明記されている場合のみ symptoms に格納（薬品の効能から推測して勝手に症状を作り出すことは禁止）
    - 処方情報全体を prescription に構造化して格納:
      - hospital_name: 病院・クリニック名（例: 栗田皮フ科）
@@ -317,7 +317,7 @@ $contextSection$historySection
   "condition_score": 1〜10の整数 (指定または体調が推測できれば設定、不明ならnull),
   "symptoms": ["症状名"],
   "medications": [
-    { "name": "薬の名前", "time": "08:30" }
+    { "name": "薬の名前", "time": "08:30", "quantity": 1 }
   ],
   "weight": 小数 (kg、不明ならnull),
   "steps": 整数 (不明ならnull),

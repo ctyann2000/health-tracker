@@ -213,7 +213,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     if (record.symptoms.isNotEmpty)
                       _buildDetailRow(Icons.sick_outlined, '症状: ${record.symptoms.join(", ")}'),
                     if (record.medications.isNotEmpty)
-                      _buildDetailRow(Icons.medication_outlined, '薬: ${record.medications.map((m) => m.name).join(", ")}'),
+                      _buildDetailRow(
+                        Icons.medication_outlined,
+                        '薬: ${record.medications.map((m) => '${m.name} ${m.quantity}錠').join(", ")}',
+                      ),
                     if (record.workouts.isNotEmpty)
                       _buildDetailRow(Icons.fitness_center, '運動: ${record.workouts.map((w) => w.name).join(", ")}'),
                     if (record.steps != null && record.steps! > 0)

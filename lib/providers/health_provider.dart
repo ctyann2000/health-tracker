@@ -247,8 +247,11 @@ class HealthProvider with ChangeNotifier {
     }
   }
 
-  /// 薬品リストを名寄せ・重複統合する
-  List<Medication> _sanitizeMedicationsList(List<Medication> meds) {
+  /// 薬品リストを名寄せ・重複統合する（同日の同一薬品は錠数を加算）
+  List<Medication> _sanitizeMedicationsList(
+    List<Medication> meds, {
+    bool accumulateQuantities = true,
+  }) {
     if (meds.isEmpty) return [];
 
     final presMedNames = _prescriptions
@@ -265,11 +268,10 @@ class HealthProvider with ChangeNotifier {
 
       if (existIndex >= 0) {
         final existing = result[existIndex];
-        // 服薬時間: '処方' は仮ステータスなので、具体的な時間帯（'朝'など）や非'処方'を優先
-        String? mergedTime = existing.time;
-        if (mergedTime == null || mergedTime == '処方') {
-          mergedTime = (med.time != null && med.time != '処方') ? med.time : mergedTime;
-        }
+        final mergedTime = _mergeMedicationTimes(existing.time, med.time);
+        final mergedQuantity = accumulateQuantities
+            ? existing.quantity + med.quantity
+            : (med.quantity > existing.quantity ? med.quantity : existing.quantity);
 
         // 代表名（一般名）に正規化
         final normExisting = MedicationNormalizer.normalize(existing.name);
@@ -279,6 +281,7 @@ class HealthProvider with ChangeNotifier {
         result[existIndex] = Medication(
           name: canonicalName.isNotEmpty ? canonicalName : existing.name,
           time: mergedTime,
+          quantity: mergedQuantity,
         );
       } else {
         // 新規薬品: 代表名（一般名）に正規化して登録
@@ -286,11 +289,39 @@ class HealthProvider with ChangeNotifier {
         result.add(Medication(
           name: canonicalName.isNotEmpty ? canonicalName : med.name.trim(),
           time: med.time,
+          quantity: med.quantity,
         ));
       }
     }
 
     return result;
+  }
+
+  /// 服薬時間文字列を重複なく連結マージ（'処方' は仮ステータスのため実時刻優先）
+  String? _mergeMedicationTimes(String? t1, String? t2) {
+    final Set<String> validTimes = {};
+    bool hasPrescriptionTag = false;
+
+    void collect(String? raw) {
+      if (raw == null || raw.trim().isEmpty) return;
+      for (final part in raw.split(',')) {
+        final p = part.trim();
+        if (p.isEmpty) continue;
+        if (p == '処方') {
+          hasPrescriptionTag = true;
+        } else {
+          validTimes.add(p);
+        }
+      }
+    }
+
+    collect(t1);
+    collect(t2);
+
+    if (validTimes.isNotEmpty) {
+      return validTimes.join(', ');
+    }
+    return hasPrescriptionTag ? '処方' : null;
   }
 
   /// 既存の全レコードをスキャンし、過去の重複・表記ゆれ薬品を自動統合・正規化
@@ -312,7 +343,11 @@ class HealthProvider with ChangeNotifier {
   bool _areMedListsEqual(List<Medication> a, List<Medication> b) {
     if (a.length != b.length) return false;
     for (int i = 0; i < a.length; i++) {
-      if (a[i].name != b[i].name || a[i].time != b[i].time) return false;
+      if (a[i].name != b[i].name ||
+          a[i].time != b[i].time ||
+          a[i].quantity != b[i].quantity) {
+        return false;
+      }
     }
     return true;
   }
@@ -498,20 +533,25 @@ class HealthProvider with ChangeNotifier {
           ? symptomCounts.entries.map((e) => '${e.key}(${e.value}日)').join(', ')
           : '記録なし';
 
-      // 服薬の集計（正規化名）
-      final medCounts = <String, int>{};
+      // 服用薬の集計（正規化名：日数と合計錠数）
+      final medDays = <String, int>{};
+      final medTotalQty = <String, int>{};
       for (var r in mRecords) {
-        final dayMeds = <String>{};
+        final dayMedsQty = <String, int>{};
         for (var m in r.medications) {
           final canon = MedicationNormalizer.normalize(m.name);
-          dayMeds.add(canon.isNotEmpty ? canon : m.name);
+          final key = canon.isNotEmpty ? canon : m.name;
+          dayMedsQty[key] = (dayMedsQty[key] ?? 0) + m.quantity;
         }
-        for (var mName in dayMeds) {
-          medCounts[mName] = (medCounts[mName] ?? 0) + 1;
+        for (var e in dayMedsQty.entries) {
+          medDays[e.key] = (medDays[e.key] ?? 0) + 1;
+          medTotalQty[e.key] = (medTotalQty[e.key] ?? 0) + e.value;
         }
       }
-      final medSummary = medCounts.isNotEmpty
-          ? medCounts.entries.map((e) => '${e.key}(${e.value}日)').join(', ')
+      final medSummary = medDays.isNotEmpty
+          ? medDays.entries
+              .map((e) => '${e.key}(${e.value}日/計${medTotalQty[e.key] ?? e.value}錠)')
+              .join(', ')
           : '服薬なし';
 
       // 体重
@@ -535,7 +575,9 @@ class HealthProvider with ChangeNotifier {
       if (r.symptoms.isNotEmpty) parts.add('症状:[${r.symptoms.join(",")}]');
       if (r.medications.isNotEmpty) {
         final mNames = r.medications
-            .map((m) => m.time != null && m.time != '処方' ? '${m.name}(${m.time})' : m.name)
+            .map((m) => m.time != null && m.time != '処方'
+                ? '${m.name} ${m.quantity}錠(${m.time})'
+                : '${m.name} ${m.quantity}錠')
             .join(",");
         parts.add('服薬:[$mNames]');
       }

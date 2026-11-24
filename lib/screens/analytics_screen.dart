@@ -619,6 +619,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
         if (groupIndex >= 0) {
           groups[groupIndex].rawNames.add(raw);
+          groups[groupIndex].totalQuantity += m.quantity;
         } else {
           final canon = MedicationNormalizer.normalize(raw);
           // 手帳の処方薬リストに対応する正式名称があれば探す
@@ -635,6 +636,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             canonicalName: mainName,
             rawNames: {raw},
             formalPrescriptionName: (formalName != null && formalName != mainName) ? formalName : null,
+            totalQuantity: m.quantity,
           ));
         }
       }
@@ -663,6 +665,25 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   Text(
                     group.canonicalName,
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF06292).withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: const Color(0xFFF06292).withValues(alpha: 0.35),
+                        width: 0.6,
+                      ),
+                    ),
+                    child: Text(
+                      '計${group.totalQuantity}錠',
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFC2185B),
+                      ),
+                    ),
                   ),
                   if (group.formalPrescriptionName != null)
                     Container(
@@ -693,23 +714,37 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 children: displayRecords.asMap().entries.map((entry) {
                   int idx = entry.key;
                   HealthRecord r = entry.value;
-                  // グループ内のいずれかの薬品名または代表名に合致すれば服用あり
-                  bool taken = r.medications.any((m) {
+                  // グループ内のいずれかの薬品名または代表名に合致したレコードの錠数を合算
+                  int dayTotalQty = 0;
+                  for (final m in r.medications) {
                     final mRaw = m.name.trim();
-                    return group.rawNames.contains(mRaw) ||
-                        MedicationNormalizer.isSameMedication(group.canonicalName, mRaw, presMedNames);
-                  });
+                    if (group.rawNames.contains(mRaw) ||
+                        MedicationNormalizer.isSameMedication(group.canonicalName, mRaw, presMedNames)) {
+                      dayTotalQty += m.quantity;
+                    }
+                  }
+                  final bool taken = dayTotalQty > 0;
 
                   return Column(
                     children: [
                       Container(
                         width: 22,
                         height: 22,
+                        alignment: Alignment.center,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: taken ? const Color(0xFFF06292) : Colors.grey.withValues(alpha: 0.2),
                         ),
-                        child: taken ? const Icon(Icons.check, size: 13, color: Colors.white) : null,
+                        child: taken
+                            ? Text(
+                                '$dayTotalQty',
+                                style: const TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : null,
                       ),
                       const SizedBox(height: 3),
                       Text(dateFormats[idx], style: const TextStyle(fontSize: 9, color: Colors.black54)),
@@ -1925,10 +1960,12 @@ class _MedAdherenceGroup {
   final String canonicalName;
   final Set<String> rawNames;
   final String? formalPrescriptionName;
+  int totalQuantity;
 
   _MedAdherenceGroup({
     required this.canonicalName,
     required this.rawNames,
     this.formalPrescriptionName,
+    this.totalQuantity = 0,
   });
 }

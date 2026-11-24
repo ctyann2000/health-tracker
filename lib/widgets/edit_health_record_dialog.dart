@@ -52,7 +52,7 @@ class _EditHealthRecordDialogState extends State<EditHealthRecordDialog> {
     _conditionScore = (r?.conditionScore ?? 7).toDouble();
     _symptomsController = TextEditingController(text: r?.symptoms.join(', ') ?? '');
     _medicationsController = TextEditingController(
-      text: r?.medications.map((m) => m.name).join(', ') ?? '',
+      text: r?.medications.map((m) => '${m.name} ${m.quantity}錠').join(', ') ?? '',
     );
     _weightController = TextEditingController(text: r?.weight != null ? '${r!.weight}' : '');
     _bodyFatController = TextEditingController(text: r?.bodyFat != null ? '${r!.bodyFat}' : '');
@@ -158,7 +158,7 @@ class _EditHealthRecordDialogState extends State<EditHealthRecordDialog> {
         .split(',')
         .map((m) => m.trim())
         .where((m) => m.isNotEmpty)
-        .map((name) => Medication(name: name))
+        .map((entry) => Medication.parseFromInput(entry))
         .toList();
 
     final updated = HealthRecord(
@@ -324,8 +324,8 @@ class _EditHealthRecordDialogState extends State<EditHealthRecordDialog> {
                       TextField(
                         controller: _medicationsController,
                         decoration: const InputDecoration(
-                          labelText: 'お薬 (カンマ区切り)',
-                          hintText: '例: ロキソプロフェン, エペリゾン',
+                          labelText: 'お薬 (カンマ区切り・例: 薬名 2錠)',
+                          hintText: '例: ロキソプロフェン 2錠, エペリゾン',
                           prefixIcon: Icon(Icons.medication_outlined, size: 20),
                           border: OutlineInputBorder(),
                         ),
