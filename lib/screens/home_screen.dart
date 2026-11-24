@@ -169,7 +169,10 @@ class _HomeScreenState extends State<HomeScreen> {
         String? qrRawData;
         if (imageToProcess != null) {
           try {
-            qrRawData = await _qrService.scanQrFromImagePath(imageToProcess.path);
+            qrRawData = await _qrService.scanQrFromImagePath(
+              imageToProcess.path,
+              imageBytes: imageBytesToProcess,
+            );
           } catch (e) {
             debugPrint('Chat image QR pre-scan error: $e');
           }

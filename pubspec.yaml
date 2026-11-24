@@ -47,6 +47,7 @@ dependencies:
   http: ^1.6.0
   pedometer: ^4.0.2
   permission_handler: ^11.3.1
+  charset: ^2.0.1
 
 dev_dependencies:
   flutter_test:
