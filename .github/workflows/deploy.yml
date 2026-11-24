@@ -59,9 +59,28 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./build/web
 
+      - name: Prepare Android Release Signing
+        env:
+          ANDROID_SIGNING_KEY: ${{ secrets.ANDROID_SIGNING_KEY }}
+        run: |
+          if [ -n "$ANDROID_SIGNING_KEY" ]; then
+            STORE_PASS="${ANDROID_SIGNING_KEY%%|*}"
+            KEYSTORE_B64="${ANDROID_SIGNING_KEY#*|}"
+            echo -n "$KEYSTORE_B64" | base64 -d > android/app/release-keystore.p12
+            printf "storePassword=%s\nkeyPassword=%s\nkeyAlias=upload\nstoreFile=release-keystore.p12\n" "$STORE_PASS" "$STORE_PASS" > android/key.properties
+            echo "Fixed release keystore configured."
+          else
+            echo "::warning::ANDROID_SIGNING_KEY secret is not set; falling back to debug signing."
+          fi
+
       - name: Build Android Release APK
         run: |
           flutter build apk --release --dart-define=GEMINI_API_KEY_B64="${{ env.KEY_B64 }}"
+
+      - name: Cleanup Android Release Signing
+        if: always()
+        run: |
+          rm -f android/app/release-keystore.p12 android/key.properties
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
