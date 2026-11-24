@@ -46,7 +46,7 @@ jobs:
           fi
           KEY_B64=$(echo -n "$RAW_KEY" | base64 -w 0)
           echo "KEY_B64=$KEY_B64" >> $GITHUB_ENV
-          flutter build web --release --pwa-strategy none --base-href "/health-tracker/" --dart-define=GEMINI_API_KEY_B64="$KEY_B64"
+          flutter build web --release --base-href "/health-tracker/" --dart-define=GEMINI_API_KEY_B64="$KEY_B64"
 
       - name: Remove sensitive assets from Web
         run: |
